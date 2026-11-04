@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathRouter - Strict Calculator Agent</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=17">
+</head>
+<body>
+
+    <div class="layout-wrapper">
+        <div class="container">
+        <div class="network-banner" id="networkBanner">Connection lost. Please check your internet.</div>
+        <header>
+            <h2>✨ MathRouter</h2>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <div class="recording-indicator" id="recordingIndicator" style="display: none;">
+                    <span class="pulsing-dot"></span>
+                    <span id="recordingIndicatorText">Rec: 0 turns</span>
+                </div>
+                <button class="header-btn record-btn" id="recordToggleBtn" title="Start or End Recording">
+                    <span id="recordBtnIcon">⏺️</span> <span id="recordBtnLabel">Record</span>
+                </button>
+                <button class="header-btn" id="openRecordingsBtn" title="Saved Recordings & Takes">
+                    📁 Recordings <span class="count-pill" id="recordingsCountBadge">0</span>
+                </button>
+                <button class="settings-btn" id="clearChatBtn" aria-label="Clear Chat" title="Clear Chat" style="font-size: 14px; font-weight: 600; padding: 8px 12px;">🗑️ Clear</button>
+                <button class="settings-btn" id="settingsBtn" aria-label="Settings" title="Settings">⚙️</button>
+            </div>
+        </header>
+
+        <div class="settings-panel" id="settingsPanel">
+            <h3>Server Modules</h3>
+            <div class="toggle-row">
+                <span>Addition</span>
+                <label class="switch"><input type="checkbox" id="toggle_add" checked><span class="slider"></span></label>
+            </div>
+            <div class="toggle-row">
+                <span>Subtraction</span>
+                <label class="switch"><input type="checkbox" id="toggle_sub" checked><span class="slider"></span></label>
+            </div>
+            <div class="toggle-row">
+                <span>Multiplication</span>
+                <label class="switch"><input type="checkbox" id="toggle_mul" checked><span class="slider"></span></label>
+            </div>
+            <div class="toggle-row">
+                <span>Division</span>
+                <label class="switch"><input type="checkbox" id="toggle_div" checked><span class="slider"></span></label>
+            </div>
+        </div>
+
+        <div class="chat-box" id="chatBox">
+            <!-- The AI will generate the initial greeting -->
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Ask a math question..." autocomplete="off">
+            <button id="sendBtn">Send</button>
+        </div>
+    </div> <!-- End container -->
+
+    <div class="system-logs-panel" id="systemLogsPanel">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 style="margin: 0; color: #34d399;">Live Activity & Logs</h3>
+            <button id="clearLogsBtn" style="background: none; border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px;">Clear</button>
+        </div>
+        <div class="logs-container" id="logsContainer"></div>
+    </div>
+</div> <!-- End layout-wrapper -->
+
+<!-- Saved Recordings Modal -->
+<div class="modal-backdrop" id="recordingsModal" style="display: none;">
+    <div class="recordings-modal">
+        <div class="modal-top">
+            <div class="modal-title-group">
+                <h3>📁 Recorded Evaluation Sessions & Takes</h3>
+                <span class="modal-sub">Hierarchical recordings with separate JSON files for each turn/take</span>
+            </div>
+            <button class="close-modal-btn" id="closeRecordingsModalBtn" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-content-grid">
+            <!-- Sidebar: Sessions List -->
+            <div class="sessions-sidebar">
+                <div class="sidebar-top-bar">
+                    <span class="sidebar-heading">Recordings & Takes</span>
+                    <button class="subtle-refresh-btn" id="refreshSessionsBtn" title="Refresh">🔄</button>
+                </div>
+                <div class="sessions-list" id="sessionsList">
+                    <div class="sessions-empty-state">Loading recordings...</div>
+                </div>
+            </div>
+
+            <!-- Main Panel: Viewer with Tabs -->
+            <div class="session-viewer" id="sessionViewer">
+                <div class="viewer-empty-state" id="viewerEmptyState">
+                    <div style="font-size: 2.5rem; margin-bottom: 12px; opacity: 0.5;">📋</div>
+                    <p>Select a take from a recording on the left to inspect its clean separate JSON.</p>
+                </div>
+
+                <div class="viewer-content" id="viewerContent" style="display: none;">
+                    <div class="viewer-header">
+                        <div class="viewer-meta">
+                            <h4 id="viewerSessionTitle">RECORDING</h4>
+                            <div class="viewer-badges" id="viewerBadges"></div>
+                        </div>
+                        <div class="viewer-actions">
+                            <button class="pill-action-btn" id="copyJsonBtn">📋 Copy Take JSON</button>
+                            <button class="pill-action-btn" id="downloadJsonBtn">⬇️ Download Take JSON</button>
+                            <button class="pill-action-btn danger" id="deleteSessionBtn">🗑️ Delete</button>
+                        </div>
+                    </div>
+
+                    <!-- Dropdown of Takes for the selected recording -->
+                    <div class="take-selector-bar" id="takeSelectorBar">
+                        <div class="take-selector-left">
+                            <label for="takeSelectDropdown" class="take-dropdown-label">
+                                <span class="take-dropdown-icon">🎯</span> Select Take:
+                            </label>
+                            <div class="take-select-wrapper">
+                                <select id="takeSelectDropdown" class="take-dropdown-select" aria-label="Select Take">
+                                    <!-- Populated dynamically with takes -->
+                                </select>
+                            </div>
+                        </div>
+                        <div class="take-nav-controls">
+                            <button id="prevTakeBtn" class="take-nav-btn" title="Previous Take">◀ Prev Take</button>
+                            <span id="takePositionBadge" class="take-position-badge">Take 1 of 1</span>
+                            <button id="nextTakeBtn" class="take-nav-btn" title="Next Take">Next Take ▶</button>
+                        </div>
+                    </div>
+
+                    <!-- Tabs Header -->
+                    <div class="viewer-tabs">
+                        <button class="tab-btn active" id="tabFormattedBtn">✨ Formatted View</button>
+                        <button class="tab-btn" id="tabRawJsonBtn">{ } Raw JSON</button>
+                    </div>
+
+                    <!-- Tab 1: Formatted View -->
+                    <div class="tab-pane active" id="tabFormattedPane">
+                        <div class="formatted-turns" id="formattedTurnsList"></div>
+                    </div>
+
+                    <!-- Tab 2: Raw JSON -->
+                    <div class="tab-pane" id="tabRawJsonPane" style="display: none;">
+                        <pre class="json-code-box"><code id="rawJsonContent"></code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="app.js?v=17"></script>
+</body>
+</html>
