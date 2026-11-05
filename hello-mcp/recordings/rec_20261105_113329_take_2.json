@@ -1,0 +1,30 @@
+{
+  "turn_id": "rec_20261105_113329_take_2",
+  "session_id": "rec_20261105_113329",
+  "recording_title": "RECORDING 4",
+  "recording_number": 4,
+  "take_number": 2,
+  "turn_number": 2,
+  "take_label": "TAKE #2",
+  "timestamp": "2026-11-05T11:33:48.625Z",
+  "user_message": "yes",
+  "assistant_response": "The result of adding 2 and 232 is 234. If you have another calculation in mind, feel free to let me know!",
+  "tool_calls": [
+    {
+      "summary": "--- [4. TOOL CALL RESULT] ---\n[add - add_numbers Started] args:\\n{\n  \"num1\": 2,\n  \"num2\": 232\n}\n[add - add_numbers Output] \\n234.0"
+    }
+  ],
+  "latency_seconds": 3.203,
+  "usage": {
+    "prompt_tokens": 2064,
+    "completion_tokens": 29,
+    "total_tokens": 2093
+  },
+  "model": "gpt-4o",
+  "inference_time": 3.203,
+  "prompt_tokens": 2064,
+  "input_tokens": 2064,
+  "completion_tokens": 29,
+  "output_tokens": 29,
+  "total_tokens": 2093
+}

@@ -521,16 +521,24 @@ def save_single_turn_data(turn_data: dict) -> dict:
     turn_data["recording_title"] = recording_title
     
     model = turn_data.get("model", "gpt-4o")
-    user_msg = str(turn_data.get("user_message") or turn_data.get("user") or "")
-    assistant_res = str(turn_data.get("assistant_response") or turn_data.get("assistant") or "")
-    lat = float(turn_data.get("latency_seconds") or 0.0)
+    user_msg = str(turn_data.get("user_message") or turn_data.get("user") or turn_data.get("prompt") or "")
+    assistant_res = str(turn_data.get("assistant_response") or turn_data.get("assistant") or turn_data.get("response") or "")
+    lat = float(turn_data.get("latency_seconds") or turn_data.get("inference_time") or turn_data.get("latency") or 0.0)
     usage = turn_data.get("usage") or {}
-    p_tokens = int(usage.get("prompt_tokens") or 0)
-    c_tokens = int(usage.get("completion_tokens") or 0)
-    tot_tokens = int(usage.get("total_tokens") or (p_tokens + c_tokens))
-    tool_calls = turn_data.get("tool_calls") or []
+    p_tokens = int(turn_data.get("prompt_tokens") or turn_data.get("input_tokens") or usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+    c_tokens = int(turn_data.get("completion_tokens") or turn_data.get("output_tokens") or usage.get("completion_tokens") or usage.get("output_tokens") or 0)
+    tot_tokens = int(turn_data.get("total_tokens") or usage.get("total_tokens") or (p_tokens + c_tokens))
+    tool_calls = turn_data.get("tool_calls") or turn_data.get("tools") or turn_data.get("toolCalls") or []
     timestamp_str = turn_data.get("timestamp") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     turn_data["timestamp"] = timestamp_str
+    turn_data["latency_seconds"] = lat
+    turn_data["inference_time"] = lat
+    turn_data["prompt_tokens"] = p_tokens
+    turn_data["input_tokens"] = p_tokens
+    turn_data["completion_tokens"] = c_tokens
+    turn_data["output_tokens"] = c_tokens
+    turn_data["total_tokens"] = tot_tokens
+    turn_data["tool_calls"] = tool_calls
 
     # 1. Save in directory recordings/{session_id}/take_{turn_number}.json
     session_dir = os.path.join(RECORDINGS_DIR, session_id)
@@ -676,6 +684,107 @@ async def save_recording(request: Request):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Failed to save recording: {str(e)}"})
 
+@app.post("/api/rerun_gemini")
+async def rerun_gemini_endpoint(request: Request):
+    try:
+        body = await request.json() if request.headers.get("content-type") == "application/json" else {}
+        source_id = body.get("session_id")
+        key = body.get("gemini_api_key")
+        rec_title = body.get("recording_title")
+        rec_num = body.get("recording_number")
+        from rerun_gemini import rerun_session_with_gemini
+        target_id = rerun_session_with_gemini(
+            source_session_id=source_id,
+            recording_title=rec_title,
+            recording_number=rec_num,
+            gemini_api_key=key
+        )
+        if target_id:
+            return {"status": "ok", "message": "Gemini re-run completed and saved to PostgreSQL", "session_id": target_id}
+        return JSONResponse(status_code=400, content={"error": "Re-run failed. Check GEMINI_API_KEY or ensure turns exist in database or recordings directory."})
+    except Exception as err:
+        return JSONResponse(status_code=500, content={"error": str(err)})
+
+@app.get("/api/evals/compare")
+async def get_eval_comparison(session_id: str = None, recording_number: int = None, judge: bool = False):
+    try:
+        from run_evals import find_paired_sessions, evaluate_sessions
+        gpt_id = None
+        gemini_id = None
+
+        if session_id:
+            with psycopg.connect(POSTGRES_URL, connect_timeout=3) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT session_id, model, recording_title, payload FROM eval_sessions WHERE session_id = %s;", (session_id,))
+                    row = cur.fetchone()
+                    if row:
+                        s_id, mod, title, pay = row
+                        if mod == "gemini-2.5-flash" or "gemini" in (title or "").lower():
+                            gemini_id = s_id
+                            if pay and isinstance(pay, dict) and pay.get("source_session_id"):
+                                gpt_id = pay["source_session_id"]
+                        else:
+                            gpt_id = s_id
+                            cur.execute("SELECT session_id FROM eval_sessions WHERE payload->>'source_session_id' = %s LIMIT 1;", (gpt_id,))
+                            g_row = cur.fetchone()
+                            if g_row:
+                                gemini_id = g_row[0]
+
+        if not gpt_id or not gemini_id:
+            target_gpt, target_gemini = find_paired_sessions(recording_number)
+            if target_gpt: gpt_id = target_gpt["session_id"]
+            if target_gemini: gemini_id = target_gemini["session_id"]
+
+        if not gpt_id or not gemini_id:
+            return JSONResponse(status_code=404, content={"error": "Could not find paired GPT and Gemini sessions."})
+
+        summary = evaluate_sessions(gpt_id, gemini_id, use_judge=judge)
+        return summary
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Evaluation error: {str(e)}"})
+
+@app.post("/api/evals/judge")
+async def judge_turn_endpoint(request: Request):
+    try:
+        body = await request.json()
+        user_msg = body.get("user_message", "")
+        gpt_res = body.get("gpt_response", "")
+        gemini_res = body.get("gemini_response", "")
+        key = body.get("gemini_api_key") or os.getenv("GEMINI_API_KEY")
+
+        if not key:
+            return JSONResponse(status_code=400, content={"error": "GEMINI_API_KEY is required for LLM Judge."})
+
+        from google import genai
+        from run_evals import run_llm_judge
+        client = genai.Client(api_key=key)
+        verdict = run_llm_judge(user_msg, gpt_res, gemini_res, client)
+        return verdict
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Judge error: {str(e)}"})
+
+@app.post("/api/recordings/clear-all")
+@app.delete("/api/recordings/clear-all")
+async def clear_all_recordings():
+    try:
+        with psycopg.connect(POSTGRES_URL, connect_timeout=3) as conn:
+            with conn.cursor() as cur:
+                cur.execute("TRUNCATE TABLE eval_turns, eval_sessions RESTART IDENTITY CASCADE;")
+                conn.commit()
+        # Clean local files
+        if os.path.exists(RECORDINGS_DIR):
+            for item in os.listdir(RECORDINGS_DIR):
+                p = os.path.join(RECORDINGS_DIR, item)
+                if os.path.isfile(p):
+                    try: os.remove(p)
+                    except: pass
+                elif os.path.isdir(p):
+                    try: shutil.rmtree(p)
+                    except: pass
+        return {"status": "ok", "message": "All database sessions and turns cleared successfully"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to clear database: {str(e)}"})
+
 @app.get("/api/recordings")
 async def list_recordings():
     recordings_map = {}
@@ -713,11 +822,11 @@ async def list_recordings():
                 cur.execute("""
                     SELECT turn_id, session_id, turn_number, take_label, recording_title,
                            model, timestamp, user_message, assistant_response,
-                           latency_seconds, total_tokens, payload
+                           latency_seconds, total_tokens, payload, prompt_tokens, completion_tokens, tool_calls
                     FROM eval_turns ORDER BY created_at ASC, turn_number ASC;
                 """)
                 for r in cur.fetchall():
-                    t_id, s_id, t_num, t_label, rec_title, model, ts, u_msg, a_res, lat, toks, payload = r
+                    t_id, s_id, t_num, t_label, rec_title, model, ts, u_msg, a_res, lat, toks, payload, p_tok, c_tok, t_calls = r
                     
                     if s_id not in recordings_map:
                         rec_num = len(recordings_map) + 1
@@ -749,7 +858,14 @@ async def list_recordings():
                         "preview": (u_msg or "")[:65],
                         "assistant_response": a_res or "",
                         "latency_seconds": float(lat or 0),
-                        "total_tokens": toks or 0,
+                        "inference_time": float(lat or 0),
+                        "prompt_tokens": p_tok or 0,
+                        "input_tokens": p_tok or 0,
+                        "completion_tokens": c_tok or 0,
+                        "output_tokens": c_tok or 0,
+                        "total_tokens": toks or ((p_tok or 0) + (c_tok or 0)),
+                        "tool_calls": t_calls or [],
+                        "payload": payload if isinstance(payload, dict) else {},
                         "model": model
                     }
                     if not any(t["turn_id"] == t_id for t in recordings_map[s_id]["takes"]):
@@ -941,9 +1057,26 @@ async def list_recordings():
     recordings_list.sort(key=lambda x: (x.get("start_time") or x.get("created_at") or x.get("session_id")), reverse=False)
 
     # Assign sequential clean names: RECORDING 1, RECORDING 2, RECORDING 3...
-    for idx, rec in enumerate(recordings_list):
-        rec["recording_number"] = idx + 1
-        rec["recording_title"] = f"RECORDING {idx + 1}"
+    # While preserving Gemini re-run titles (e.g. "recording 1(  gemini)")!
+    primary_idx = 1
+    for rec in recordings_list:
+        is_gemini = (
+            rec.get("model") == "gemini-2.5-flash"
+            or rec.get("session_id", "").startswith("gemini_")
+            or "gemini" in (rec.get("recording_title") or "").lower()
+        )
+        if is_gemini:
+            existing_title = rec.get("recording_title") or ""
+            if "gemini" in existing_title.lower():
+                rec["recording_title"] = existing_title
+            else:
+                source_num = primary_idx - 1 if primary_idx > 1 else 1
+                rec["recording_title"] = f"recording {source_num}(  gemini)"
+        else:
+            rec["recording_number"] = primary_idx
+            rec["recording_title"] = f"RECORDING {primary_idx}"
+            primary_idx += 1
+
         for t in rec["takes"]:
             t["recording_title"] = rec["recording_title"]
 

@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 103,
+    "prompt_tokens": 39,
+    "completion_tokens": 64
+  },
+  "turn_id": "gemini_eval_1793879295_take_4",
+  "timestamp": "2026-11-05T11:48:25.000Z",
+  "session_id": "gemini_eval_1793879295",
+  "take_label": "TAKE #4",
+  "tool_calls": [],
+  "take_number": 4,
+  "turn_number": 4,
+  "input_tokens": 39,
+  "total_tokens": 103,
+  "user_message": "yes",
+  "output_tokens": 64,
+  "prompt_tokens": 39,
+  "inference_time": 1.535,
+  "latency_seconds": 1.535,
+  "recording_title": "recording 1(  gemini)",
+  "recording_number": 1,
+  "completion_tokens": 64,
+  "assistant_response": "Hey there! Looks like you said \"yes\" \u2013 that's a great answer, but it's not quite a math problem for me to solve!\n\nCould you please give me an actual math question or equation? I'm ready to tackle it when you are! Just tell me what you need calculated."
+}

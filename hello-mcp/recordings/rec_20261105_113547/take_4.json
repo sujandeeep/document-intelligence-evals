@@ -1,0 +1,30 @@
+{
+  "turn_id": "rec_20261105_113547_take_4",
+  "session_id": "rec_20261105_113547",
+  "recording_title": "RECORDING 6",
+  "recording_number": 6,
+  "take_number": 4,
+  "turn_number": 4,
+  "take_label": "TAKE #4",
+  "timestamp": "2026-11-05T11:36:26.811Z",
+  "user_message": "yes",
+  "assistant_response": "The result of subtracting 383 from 237,651 is 237,267. If you have another calculation in mind, feel free to let me know!",
+  "tool_calls": [
+    {
+      "summary": "--- [4. TOOL CALL RESULT] ---\n[sub - sub_numbers Started] args:\\n{\n  \"num1\": 237651,\n  \"num2\": 383\n}\n[sub - sub_numbers Output] \\n237267.0"
+    }
+  ],
+  "latency_seconds": 3.453,
+  "usage": {
+    "prompt_tokens": 2058,
+    "completion_tokens": 34,
+    "total_tokens": 2092
+  },
+  "model": "gpt-4o",
+  "inference_time": 3.453,
+  "prompt_tokens": 2058,
+  "input_tokens": 2058,
+  "completion_tokens": 34,
+  "output_tokens": 34,
+  "total_tokens": 2092
+}

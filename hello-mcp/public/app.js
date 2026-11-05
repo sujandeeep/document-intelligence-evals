@@ -81,12 +81,12 @@ if (savedHistory) {
         });
     } catch (e) {
         messages = [{ role: "system", content: "You are MathRouter..." }];
-        processBackendRequest({ messages, toggles: getToggles() });
+        appendMessage('bot', "✨ Hello! I'm MathRouter, your calculator agent. What calculation would you like to perform today?");
     }
 } else {
     messages.push({ role: "system", content: "You are MathRouter..." });
     saveHistory();
-    processBackendRequest({ messages, toggles: getToggles() });
+    appendMessage('bot', "✨ Hello! I'm MathRouter, your calculator agent. What calculation would you like to perform today?");
 }
 
 // Toggles setup
