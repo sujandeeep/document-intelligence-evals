@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 313,
+    "prompt_tokens": 228,
+    "completion_tokens": 85
+  },
+  "turn_id": "gemini_eval_1793956920_take_2",
+  "timestamp": "2026-11-06T09:22:04.000Z",
+  "session_id": "gemini_eval_1793956920",
+  "take_label": "TAKE #2",
+  "tool_calls": [],
+  "take_number": 2,
+  "turn_number": 2,
+  "input_tokens": 228,
+  "total_tokens": 313,
+  "user_message": "YES",
+  "output_tokens": 85,
+  "prompt_tokens": 228,
+  "inference_time": 2.206,
+  "latency_seconds": 2.206,
+  "recording_title": "recording 2(  gemini)",
+  "recording_number": 2,
+  "completion_tokens": 85,
+  "assistant_response": "Alright, wonderful! You've given me the green light to go ahead and add those numbers for you.\n\nSo, running that calculation internally, adding 99 and 101 together, we get a nice round 200.\n\nThe result of adding 99 and 101 is 200. If you have another calculation in mind, feel free to let me know!"
+}

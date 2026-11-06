@@ -684,24 +684,25 @@ async def save_recording(request: Request):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Failed to save recording: {str(e)}"})
 
+@app.post("/api/rerun_gpt5")
 @app.post("/api/rerun_gemini")
-async def rerun_gemini_endpoint(request: Request):
+async def rerun_gpt5_endpoint(request: Request):
     try:
         body = await request.json() if request.headers.get("content-type") == "application/json" else {}
         source_id = body.get("session_id")
-        key = body.get("gemini_api_key")
+        key = body.get("openai_api_key") or body.get("gemini_api_key") or os.getenv("OPENAI_API_KEY")
         rec_title = body.get("recording_title")
         rec_num = body.get("recording_number")
-        from rerun_gemini import rerun_session_with_gemini
-        target_id = rerun_session_with_gemini(
+        from rerun_gpt5 import rerun_session_with_gpt5
+        target_id = rerun_session_with_gpt5(
             source_session_id=source_id,
             recording_title=rec_title,
             recording_number=rec_num,
-            gemini_api_key=key
+            openai_api_key=key
         )
         if target_id:
-            return {"status": "ok", "message": "Gemini re-run completed and saved to PostgreSQL", "session_id": target_id}
-        return JSONResponse(status_code=400, content={"error": "Re-run failed. Check GEMINI_API_KEY or ensure turns exist in database or recordings directory."})
+            return {"status": "ok", "message": "GPT-5.5 re-run completed and saved to PostgreSQL", "session_id": target_id}
+        return JSONResponse(status_code=400, content={"error": "Re-run failed. Check OPENAI_API_KEY or ensure turns exist in database or recordings directory."})
     except Exception as err:
         return JSONResponse(status_code=500, content={"error": str(err)})
 
@@ -710,7 +711,7 @@ async def get_eval_comparison(session_id: str = None, recording_number: int = No
     try:
         from run_evals import find_paired_sessions, evaluate_sessions
         gpt_id = None
-        gemini_id = None
+        baseline_id = None
 
         if session_id:
             with psycopg.connect(POSTGRES_URL, connect_timeout=3) as conn:
@@ -719,8 +720,8 @@ async def get_eval_comparison(session_id: str = None, recording_number: int = No
                     row = cur.fetchone()
                     if row:
                         s_id, mod, title, pay = row
-                        if mod == "gemini-2.5-flash" or "gemini" in (title or "").lower():
-                            gemini_id = s_id
+                        if mod in ["gpt-5.5", "gemini-2.5-flash"] or "gpt-5.5" in (title or "").lower() or "gemini" in (title or "").lower():
+                            baseline_id = s_id
                             if pay and isinstance(pay, dict) and pay.get("source_session_id"):
                                 gpt_id = pay["source_session_id"]
                         else:
@@ -728,17 +729,17 @@ async def get_eval_comparison(session_id: str = None, recording_number: int = No
                             cur.execute("SELECT session_id FROM eval_sessions WHERE payload->>'source_session_id' = %s LIMIT 1;", (gpt_id,))
                             g_row = cur.fetchone()
                             if g_row:
-                                gemini_id = g_row[0]
+                                baseline_id = g_row[0]
 
-        if not gpt_id or not gemini_id:
-            target_gpt, target_gemini = find_paired_sessions(recording_number)
+        if not gpt_id or not baseline_id:
+            target_gpt, target_baseline = find_paired_sessions(recording_number)
             if target_gpt: gpt_id = target_gpt["session_id"]
-            if target_gemini: gemini_id = target_gemini["session_id"]
+            if target_baseline: baseline_id = target_baseline["session_id"]
 
-        if not gpt_id or not gemini_id:
-            return JSONResponse(status_code=404, content={"error": "Could not find paired GPT and Gemini sessions."})
+        if not gpt_id or not baseline_id:
+            return JSONResponse(status_code=404, content={"error": "Could not find paired GPT-4o and GPT-5.5 sessions."})
 
-        summary = evaluate_sessions(gpt_id, gemini_id, use_judge=judge)
+        summary = evaluate_sessions(gpt_id, baseline_id, use_judge=judge)
         return summary
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Evaluation error: {str(e)}"})
@@ -749,16 +750,51 @@ async def judge_turn_endpoint(request: Request):
         body = await request.json()
         user_msg = body.get("user_message", "")
         gpt_res = body.get("gpt_response", "")
-        gemini_res = body.get("gemini_response", "")
-        key = body.get("gemini_api_key") or os.getenv("GEMINI_API_KEY")
+        baseline_res = body.get("gpt5_response") or body.get("gemini_response", "")
+        session_id = body.get("session_id")
+        turn_number = body.get("turn_number")
+        gpt_lat = body.get("gpt_latency")
+        baseline_lat = body.get("gpt5_latency") or body.get("gemini_latency")
+        gpt_tok = body.get("gpt_tokens")
+        baseline_tok = body.get("gpt5_tokens") or body.get("gemini_tokens")
+        gpt_tools = body.get("gpt_tools")
+        speedup = body.get("speedup")
+        tok_saving = body.get("token_saving_pct")
+        key = body.get("openai_api_key") or body.get("gemini_api_key") or os.getenv("OPENAI_API_KEY")
 
         if not key:
-            return JSONResponse(status_code=400, content={"error": "GEMINI_API_KEY is required for LLM Judge."})
+            return JSONResponse(status_code=400, content={"error": "OPENAI_API_KEY is required for LLM Judge."})
 
-        from google import genai
+        from openai import OpenAI
         from run_evals import run_llm_judge
-        client = genai.Client(api_key=key)
-        verdict = run_llm_judge(user_msg, gpt_res, gemini_res, client)
+        client = OpenAI(api_key=key)
+        verdict = run_llm_judge(
+            user_msg=user_msg,
+            gpt_res=gpt_res,
+            baseline_res=baseline_res,
+            client=client,
+            gpt_latency=gpt_lat,
+            baseline_latency=baseline_lat,
+            gpt_tokens=gpt_tok,
+            baseline_tokens=baseline_tok,
+            gpt_tools=gpt_tools,
+            speedup=speedup,
+            tok_saving_pct=tok_saving
+        )
+
+        if session_id and turn_number is not None:
+            try:
+                with psycopg.connect(POSTGRES_URL, connect_timeout=3) as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            UPDATE eval_turns
+                            SET payload = COALESCE(payload, '{}'::jsonb) || %s::jsonb
+                            WHERE session_id = %s AND turn_number = %s;
+                        """, (json.dumps({"judge": verdict}), session_id, turn_number))
+                        conn.commit()
+            except Exception as pe:
+                print(f"[Judge Warning] Failed to persist single turn judge: {pe}")
+
         return verdict
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": f"Judge error: {str(e)}"})
@@ -814,6 +850,7 @@ async def list_recordings():
                         "total_tokens": r[7] or 0,
                         "total_latency_seconds": float(r[8] or 0),
                         "created_at": r[9].isoformat() if r[9] else "",
+                        "source_session_id": (r[10].get("source_session_id") if (len(r) > 10 and isinstance(r[10], dict)) else None),
                         "payload": r[10] if len(r) > 10 else {},
                         "takes": []
                     }
@@ -1053,34 +1090,83 @@ async def list_recordings():
     for rec in recordings_list:
         rec["takes"].sort(key=lambda x: int(x.get("take_number", 0)))
 
-    # Sort recordings chronologically so the earliest recorded is RECORDING 1
-    recordings_list.sort(key=lambda x: (x.get("start_time") or x.get("created_at") or x.get("session_id")), reverse=False)
+    # Separate primary sessions from GPT-5.5 (or legacy Gemini) simulation runs
+    baseline_simulations_by_source = {}
+    primary_sessions = []
+    orphan_baseline_sessions = []
 
-    # Assign sequential clean names: RECORDING 1, RECORDING 2, RECORDING 3...
-    # While preserving Gemini re-run titles (e.g. "recording 1(  gemini)")!
-    primary_idx = 1
-    for rec in recordings_list:
-        is_gemini = (
-            rec.get("model") == "gemini-2.5-flash"
-            or rec.get("session_id", "").startswith("gemini_")
-            or "gemini" in (rec.get("recording_title") or "").lower()
+    for s_obj in recordings_list:
+        s_id = s_obj.get("session_id", "")
+        model_name = s_obj.get("model", "")
+        title_str = (s_obj.get("recording_title") or "").lower()
+        is_baseline_sim = (
+            model_name in ["gpt-5.5", "gemini-2.5-flash"]
+            or s_id.startswith("gpt5_")
+            or s_id.startswith("gemini_")
+            or "gpt-5.5" in title_str
+            or "gemini" in title_str
+            or bool(s_obj.get("source_session_id"))
         )
-        if is_gemini:
-            existing_title = rec.get("recording_title") or ""
-            if "gemini" in existing_title.lower():
-                rec["recording_title"] = existing_title
+        if is_baseline_sim:
+            src_id = s_obj.get("source_session_id")
+            if src_id:
+                baseline_simulations_by_source[src_id] = s_obj
             else:
-                source_num = primary_idx - 1 if primary_idx > 1 else 1
-                rec["recording_title"] = f"recording {source_num}(  gemini)"
+                orphan_baseline_sessions.append(s_obj)
         else:
-            rec["recording_number"] = primary_idx
-            rec["recording_title"] = f"RECORDING {primary_idx}"
-            primary_idx += 1
+            primary_sessions.append(s_obj)
 
+    # If there are no primary GPT sessions, treat orphan baseline as primary
+    if not primary_sessions and orphan_baseline_sessions:
+        primary_sessions = orphan_baseline_sessions
+        orphan_baseline_sessions = []
+
+    # Sort primary recordings chronologically so the earliest recorded is RECORDING 1
+    primary_sessions.sort(key=lambda x: (x.get("start_time") or x.get("created_at") or x.get("session_id")), reverse=False)
+
+    for idx, rec in enumerate(primary_sessions, start=1):
+        rec["recording_number"] = idx
+        rec["recording_title"] = f"RECORDING {idx}"
         for t in rec["takes"]:
             t["recording_title"] = rec["recording_title"]
+            t["recording_number"] = idx
 
-    return {"recordings": recordings_list}
+        # Find paired baseline simulation by source session_id or recording_number fallback
+        matched_baseline = baseline_simulations_by_source.get(rec["session_id"])
+        if not matched_baseline and orphan_baseline_sessions:
+            for cand in orphan_baseline_sessions:
+                if cand.get("recording_number") == idx or f"recording {idx}" in (cand.get("recording_title") or "").lower():
+                    matched_baseline = cand
+                    break
+
+        if matched_baseline:
+            # Set baseline takes title to match parent
+            b_takes = matched_baseline.get("takes", [])
+            for bt in b_takes:
+                bt["recording_title"] = f"RECORDING {idx} (GPT-5.5)"
+                bt["recording_number"] = idx
+
+            baseline_obj = {
+                "session_id": matched_baseline["session_id"],
+                "model": "gpt-5.5",
+                "recording_title": f"RECORDING {idx} (GPT-5.5)",
+                "recording_number": idx,
+                "total_takes": matched_baseline.get("total_takes", len(b_takes)),
+                "total_tokens": matched_baseline.get("total_tokens", 0),
+                "total_latency_seconds": matched_baseline.get("total_latency_seconds", 0.0),
+                "created_at": matched_baseline.get("created_at") or "",
+                "start_time": matched_baseline.get("start_time") or "",
+                "takes": b_takes
+            }
+            rec["gpt5_run"] = baseline_obj
+            rec["gemini_run"] = baseline_obj # Backward-compatibility alias
+            rec["available_models"] = ["gpt-4o", "gpt-5.5"]
+        else:
+            rec["gpt5_run"] = None
+            rec["gemini_run"] = None
+            rec["available_models"] = ["gpt-4o"]
+
+    return {"recordings": primary_sessions}
 
 @app.get("/api/recordings/{filename:path}")
 async def get_recording(filename: str):
