@@ -23,6 +23,7 @@ import {
   Plus,
   RefreshCw,
   AlertTriangle,
+  Check,
 } from 'lucide-react';
 import { downloadPromptEvaluationPDF } from '../services/promptEvalPdfGenerator';
 
@@ -360,6 +361,26 @@ export function PromptEvaluationView({
   const [cumulativeSpend, setCumulativeSpend] = useState(0);
   const [selectedInspectPrompt, setSelectedInspectPrompt] = useState(null);
   const [viewTab, setViewTab] = useState('results'); // 'results' | 'graph'
+
+  // Custom Dropdown Open States
+  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+  const [isJudgeDropdownOpen, setIsJudgeDropdownOpen] = useState(false);
+  const modelDropdownRef = useRef(null);
+  const judgeDropdownRef = useRef(null);
+
+  // Close custom popover menus on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e) => {
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target)) {
+        setIsModelDropdownOpen(false);
+      }
+      if (judgeDropdownRef.current && !judgeDropdownRef.current.contains(e.target)) {
+        setIsJudgeDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
 
   const canvasRef = useRef(null);
 
@@ -1082,13 +1103,15 @@ export function PromptEvaluationView({
             )}
           </div>
 
-          {/* SECTION B: Target Evaluation Model */}
+          {/* SECTION B: Target Evaluation Model (Custom Robust Popover Menu) */}
           <div
+            ref={modelDropdownRef}
             style={{
               padding: 'var(--space-3)',
               backgroundColor: 'var(--surface-base)',
               borderRadius: 'var(--radius-md)',
               border: '1px solid var(--border-default)',
+              position: 'relative',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1097,41 +1120,100 @@ export function PromptEvaluationView({
               </label>
               <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Target Runner</span>
             </div>
-            <select
-              value={selectedModel}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedModel(val);
-              }}
+
+            {/* Custom Click-to-Open Trigger Button */}
+            <button
+              type="button"
               disabled={isEvaluating}
+              onClick={() => setIsModelDropdownOpen((prev) => !prev)}
               style={{
                 width: '100%',
                 marginTop: 'var(--space-1)',
                 height: 'var(--control-height-md)',
                 padding: '0 var(--space-2)',
                 backgroundColor: 'var(--surface-base)',
-                border: '1px solid var(--border-strong)',
+                border: isModelDropdownOpen ? '1px solid var(--intent-primary)' : '1px solid var(--border-strong)',
                 borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-primary)',
                 fontSize: '12px',
-                fontWeight: 500,
-                outline: 'none',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
                 cursor: isEvaluating ? 'not-allowed' : 'pointer',
+                textAlign: 'left',
               }}
             >
-              {AVAILABLE_MODELS.map((m) => (
-                <option
-                  key={m.id}
-                  value={m.id}
-                  style={{
-                    backgroundColor: 'var(--surface-base)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  {m.label} ({m.tier}) — In: {m.inputPrice} / Out: {m.outputPrice}
-                </option>
-              ))}
-            </select>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedModelSpec.label} <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>({selectedModelSpec.tier})</span>
+              </span>
+              <ChevronDown size={14} style={{ color: 'var(--text-secondary)', transform: isModelDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+            </button>
+
+            {/* Popover Menu that stays open upon click */}
+            {isModelDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  left: 0,
+                  right: 0,
+                  maxHeight: '260px',
+                  overflowY: 'auto',
+                  backgroundColor: 'var(--surface-base)',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: 'var(--radius-sm)',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.25)',
+                  zIndex: 100,
+                  padding: '4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
+                {AVAILABLE_MODELS.map((m) => {
+                  const isSelected = m.id === selectedModel;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedModel(m.id);
+                        setIsModelDropdownOpen(false);
+                      }}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: 'var(--radius-xs)',
+                        border: 'none',
+                        backgroundColor: isSelected ? 'var(--surface-selected)' : 'transparent',
+                        color: isSelected ? 'var(--intent-primary)' : 'var(--text-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background-color 0.1s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: isSelected ? 700 : 600 }}>{m.label}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          {m.tier} • In: {m.inputPrice} / Out: {m.outputPrice}
+                        </span>
+                      </div>
+                      {isSelected && <Check size={13} style={{ color: 'var(--intent-primary)' }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             <div
               style={{
@@ -1274,13 +1356,15 @@ export function PromptEvaluationView({
             </button>
           </div>
 
-          {/* SECTION B3: LLM as Judge Configuration */}
+          {/* SECTION B3: LLM as Judge Configuration (Custom Popover Menu) */}
           <div
+            ref={judgeDropdownRef}
             style={{
               padding: 'var(--space-3)',
               backgroundColor: 'var(--surface-base)',
               borderRadius: 'var(--radius-md)',
               border: '1px solid var(--border-default)',
+              position: 'relative',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1289,38 +1373,96 @@ export function PromptEvaluationView({
               </label>
               <span style={{ fontSize: '10px', color: 'var(--intent-success)', fontWeight: 600 }}>Active Evaluator</span>
             </div>
-            <select
-              value={selectedJudgeModel}
-              onChange={(e) => setSelectedJudgeModel(e.target.value)}
+
+            <button
+              type="button"
               disabled={isEvaluating}
+              onClick={() => setIsJudgeDropdownOpen((prev) => !prev)}
               style={{
                 width: '100%',
                 marginTop: 'var(--space-1)',
                 height: 'var(--control-height-md)',
                 padding: '0 var(--space-2)',
                 backgroundColor: 'var(--surface-base)',
-                border: '1px solid var(--border-strong)',
+                border: isJudgeDropdownOpen ? '1px solid var(--intent-primary)' : '1px solid var(--border-strong)',
                 borderRadius: 'var(--radius-sm)',
                 color: 'var(--text-primary)',
                 fontSize: '12px',
-                fontWeight: 500,
-                outline: 'none',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
                 cursor: isEvaluating ? 'not-allowed' : 'pointer',
+                textAlign: 'left',
               }}
             >
-              {AVAILABLE_MODELS.map((m) => (
-                <option
-                  key={m.id}
-                  value={m.id}
-                  style={{
-                    backgroundColor: 'var(--surface-base)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  {m.label} ({m.tier})
-                </option>
-              ))}
-            </select>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {selectedJudgeModel}
+              </span>
+              <ChevronDown size={14} style={{ color: 'var(--text-secondary)', transform: isJudgeDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s ease' }} />
+            </button>
+
+            {isJudgeDropdownOpen && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  left: 0,
+                  right: 0,
+                  maxHeight: '260px',
+                  overflowY: 'auto',
+                  backgroundColor: 'var(--surface-base)',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: 'var(--radius-sm)',
+                  boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.25)',
+                  zIndex: 100,
+                  padding: '4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '2px',
+                }}
+              >
+                {AVAILABLE_MODELS.map((m) => {
+                  const isSelected = m.id === selectedJudgeModel;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedJudgeModel(m.id);
+                        setIsJudgeDropdownOpen(false);
+                      }}
+                      style={{
+                        padding: '7px 10px',
+                        borderRadius: 'var(--radius-xs)',
+                        border: 'none',
+                        backgroundColor: isSelected ? 'var(--surface-selected)' : 'transparent',
+                        color: isSelected ? 'var(--intent-primary)' : 'var(--text-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        transition: 'background-color 0.1s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--surface-hover)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: isSelected ? 700 : 600 }}>{m.label}</span>
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{m.tier}</span>
+                      </div>
+                      {isSelected && <Check size={13} style={{ color: 'var(--intent-primary)' }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* SECTION C: User Prompt Question (From Selected Take) */}
