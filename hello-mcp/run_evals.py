@@ -67,11 +67,12 @@ def find_paired_sessions(recording_number=None):
             "payload": payload if isinstance(payload, dict) else (json.loads(payload) if payload else {})
         }
         is_baseline = (
-            model == "gpt-5.5"
+            model in ["gpt-6-sol", "gpt-5.5", "gemini-2.5-flash"]
+            or "gpt-6-sol" in title_low
             or "gpt-5.5" in title_low
+            or s_id.startswith("modelb_")
             or s_id.startswith("gpt5_")
             or "gemini" in title_low
-            or model == "gemini-2.5-flash"
             or s_id.startswith("gemini_")
         )
         if is_baseline:
@@ -194,31 +195,31 @@ def run_llm_judge(
 You are given the user input, each model's response, and the exact runtime execution telemetry (tools executed, latency in seconds, and token consumption).
 
 ======================================================================
-EVALUATION TURN: Model A (GPT-4o + MCP Tools) vs Model B (GPT-5.5 - Zero Tools)
+EVALUATION TURN: Model A (GPT-4o + MCP Tools) vs Model B (GPT-6-sol - Zero Tools)
 ======================================================================
 
 User Question / Context:
 \"\"\"{user_msg}\"\"\"
 
 ----------------------------------------------------------------------
-MODEL A: GPT-4o (MathRouter + Native MCP Tools)
+MODEL A: GPT-4o (Document Grounded)
 ----------------------------------------------------------------------
 Assistant Response:
 \"\"\"{gpt_res}\"\"\"
 
 Execution Telemetry:
-- Tools Executed: {tools_str}
-- Latency: {lat_a} (includes network socket IPC roundtrips to external MCP server)
+- Context: In-context document grounding
+- Latency: {lat_a}
 - Tokens Consumed: {tok_a}
 
 ----------------------------------------------------------------------
-MODEL B: GPT-5.5 (Direct Parametric / Zero Tools)
+MODEL B: GPT-6-sol (Document Grounded)
 ----------------------------------------------------------------------
 Assistant Response:
 \"\"\"{baseline_res}\"\"\"
 
 Execution Telemetry:
-- Tools Executed: 0 tools (Direct internal parametric reasoning)
+- Context: In-context document grounding
 - Latency: {lat_b}
 - Tokens Consumed: {tok_b}
 
@@ -231,10 +232,10 @@ COMPARATIVE METRICS:
 ======================================================================
 EVALUATION PILLARS:
 ======================================================================
-1. MATHEMATICAL CORRECTNESS: Did the model achieve the exact, correct numerical answer without hallucination?
-2. CONFIRMATION PROTOCOL: MathRouter protocol strictly forbids calculating without explicit user confirmation. Did the model ask for confirmation, pause, and calculate only after the user said yes?
-3. TOOL CALLING & EFFICIENCY: Evaluate whether Model A's tool invocation was correct (proper tool selection and parameters). Assess whether Model A's tool accuracy justified its latency overhead and token usage compared to Model B's direct reasoning.
-4. HOLISTIC WINNER: Choose "Model A" (GPT-4o), "Model B" (GPT-5.5), or "TIE". Weigh correctness first, followed by protocol compliance, tool precision, and latency/token efficiency.
+1. FACTUAL CORRECTNESS: Did the model achieve accurate answers strictly supported by the document?
+2. DOCUMENT GROUNDING & EVIDENCE: Did the model cite verbatim evidence and context from the document without hallucination?
+3. REASONING DEPTH & ALIGNMENT: Evaluate whether the model followed the active prompt directives thoroughly.
+4. HOLISTIC WINNER: Choose "Model A" (GPT-4o), "Model B" (GPT-6-sol), or "TIE". Weigh correctness first, followed by evidence grounding and latency/token efficiency.
 
 Evaluate both models strictly and output valid JSON only:
 {{
@@ -251,8 +252,9 @@ Evaluate both models strictly and output valid JSON only:
 }}
 """
     try:
+        judge_model = os.getenv("JUDGE_MODEL", "gpt-5.5")
         response = client.chat.completions.create(
-            model="gpt-5.5",
+            model=judge_model,
             messages=[
                 {"role": "system", "content": "You are an impartial AI evaluator. Output valid JSON only."},
                 {"role": "user", "content": judge_prompt}
@@ -453,7 +455,7 @@ def evaluate_sessions(gpt_session_id, baseline_session_id, use_judge=False):
         "gpt_session_id": gpt_session_id,
         "gpt5_session_id": baseline_session_id,
         "gemini_session_id": baseline_session_id, # backward compatibility
-        "model_b_name": "GPT-5.5",
+        "model_b_name": "GPT-6-sol",
         "total_turns_evaluated": len(eval_results),
         "math_accuracy_rate_pct": round((math_matches_count / len(eval_results) * 100), 1) if eval_results else 0.0,
         "total_gpt_tokens": tot_gpt_tokens,
@@ -472,14 +474,14 @@ def evaluate_sessions(gpt_session_id, baseline_session_id, use_judge=False):
 def print_evaluation_report(summary, show_judge=False):
     """Prints a beautiful formatted CLI evaluation report."""
     print("\n" + "=" * 90)
-    print("        MATHROUTER EVALUATION REPORT: GPT-4o (MCP TOOLS) vs GPT-5.5 (NO TOOLS)")
+    print("        MATHROUTER EVALUATION REPORT: GPT-4o (MCP TOOLS) vs GPT-6-sol (NO TOOLS)")
     print("=" * 90)
-    print(f"GPT-4o Session:  {summary['gpt_session_id']}")
-    print(f"GPT-5.5 Session: {summary.get('gpt5_session_id', summary.get('gemini_session_id'))}")
-    print(f"Turns Evaluated: {summary['total_turns_evaluated']}")
+    print(f"GPT-4o Session:    {summary['gpt_session_id']}")
+    print(f"GPT-6-sol Session: {summary.get('gpt5_session_id', summary.get('gemini_session_id'))}")
+    print(f"Turns Evaluated:   {summary['total_turns_evaluated']}")
     print("-" * 90)
-    print(f"  * Overall Token Savings:   {summary['overall_token_savings_pct']}%  ({summary['total_gpt_tokens']:,} GPT-4o tok -> {summary['total_gpt5_tokens']:,} GPT-5.5 tok)")
-    print(f"  * Overall Speedup:         {summary['overall_speedup_factor']}x faster ({summary['total_gpt_latency_s']}s GPT-4o -> {summary['total_gpt5_latency_s']}s GPT-5.5)")
+    print(f"  * Overall Token Savings:   {summary['overall_token_savings_pct']}%  ({summary['total_gpt_tokens']:,} GPT-4o tok -> {summary['total_gpt5_tokens']:,} GPT-6-sol tok)")
+    print(f"  * Overall Speedup:         {summary['overall_speedup_factor']}x faster ({summary['total_gpt_latency_s']}s GPT-4o -> {summary['total_gpt5_latency_s']}s GPT-6-sol)")
     print(f"  * Numerical Ground-Truth:  {summary['math_accuracy_rate_pct']}% matches")
     print("-" * 90)
 

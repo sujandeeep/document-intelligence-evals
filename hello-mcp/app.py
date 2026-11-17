@@ -8,8 +8,10 @@ import logging
 logging.basicConfig(filename='system.log', level=logging.INFO, format='[%(asctime)s] %(message)s')
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, StreamingResponse
+import io
+import pypdf
 
 RECORDINGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
@@ -115,6 +117,10 @@ class ChatRequest(BaseModel):
     toggles: Dict[str, bool] = {}
     execute_pending: bool = False
     pending_tool_call: Optional[Dict[str, Any]] = None
+    document_text: Optional[str] = None
+    document_name: Optional[str] = None
+    prompt_key: Optional[str] = "executive_summary"
+    custom_instruction: Optional[str] = None
 
 # MCP Client imports
 from mcp import ClientSession
@@ -215,7 +221,18 @@ async def chat_endpoint(request: Request, body: ChatRequest):
     import importlib
     import prompts
     importlib.reload(prompts)
-    SYSTEM_PROMPT = prompts.SYSTEM_PROMPT
+    
+    doc_text = body.document_text or ""
+    doc_name = body.document_name or ""
+    prompt_k = body.prompt_key or prompts.DEFAULT_PROMPT_KEY
+    custom_inst = body.custom_instruction
+    
+    base_inst = prompts.build_system_prompt(prompt_k, custom_inst)
+    if doc_text and doc_text.strip():
+        header_tag = f"ATTACHED DOCUMENT: {doc_name}" if doc_name else "ATTACHED DOCUMENT"
+        SYSTEM_PROMPT = f"{base_inst}\n\n--- BEGIN {header_tag} ---\n{doc_text.strip()}\n--- END ATTACHED DOCUMENT ---\n"
+    else:
+        SYSTEM_PROMPT = base_inst
     
     if not user_messages or user_messages[0].get("role") != "system":
         user_messages.insert(0, {"role": "system", "content": SYSTEM_PROMPT})
@@ -353,9 +370,9 @@ async def chat_endpoint(request: Request, body: ChatRequest):
         iteration += 1
         try:
             response = await openai.chat.completions.create(
-                model="gpt-4o",
+                model="gpt-5.5",
                 temperature=0.0,
-                max_tokens=1500,
+                max_tokens=4000,
                 messages=user_messages,
                 tools=available_openai_tools if available_openai_tools else None
             )
@@ -583,8 +600,27 @@ def save_single_turn_data(turn_data: dict) -> dict:
                     lat, p_tokens, c_tokens, tot_tokens, Jsonb(turn_data)
                 ))
                 conn.commit()
+
+                # Also ensure session exists in eval_sessions
+                cur.execute("""
+                    INSERT INTO eval_sessions (
+                        session_id, recording_title, recording_number, model,
+                        start_time, end_time, total_turns, total_tokens, total_latency_seconds, first_message, payload
+                    ) VALUES (%s, %s, %s, %s, NOW(), NOW(), 1, %s, %s, %s, %s)
+                    ON CONFLICT (session_id) DO UPDATE SET
+                        recording_title = COALESCE(EXCLUDED.recording_title, eval_sessions.recording_title),
+                        total_turns = (SELECT COUNT(*) FROM eval_turns WHERE session_id = EXCLUDED.session_id),
+                        total_tokens = (SELECT COALESCE(SUM(total_tokens), 0) FROM eval_turns WHERE session_id = EXCLUDED.session_id),
+                        total_latency_seconds = (SELECT COALESCE(SUM(latency_seconds), 0) FROM eval_turns WHERE session_id = EXCLUDED.session_id),
+                        end_time = NOW();
+                """, (
+                    session_id, recording_title, recording_number, model,
+                    tot_tokens, lat, (user_msg or "")[:200],
+                    Jsonb({"session_id": session_id, "recording_title": recording_title, "model": model})
+                ))
+                conn.commit()
     except Exception as pg_err:
-        print(f"Warning: PostgreSQL eval_turns write error ({pg_err})")
+        print(f"Warning: PostgreSQL eval_turns/eval_sessions write error ({pg_err})")
 
     # 3. Update Prometheus metrics
     try:
@@ -612,6 +648,1336 @@ def save_single_turn_data(turn_data: dict) -> dict:
         "filename": f"{session_id}/{take_filename}",
         "flat_filename": flat_filename
     }
+
+@app.get("/api/prompts")
+async def get_prompts():
+    import prompts
+    return {
+        "prompts": prompts.FIXATED_PROMPTS,
+        "default": prompts.DEFAULT_PROMPT_KEY
+    }
+
+@app.post("/api/upload_doc")
+async def upload_document(
+    file: Optional[UploadFile] = File(None),
+    raw_text: Optional[str] = Form(None),
+    filename: Optional[str] = Form(None)
+):
+    try:
+        extracted_text = ""
+        doc_name = "document.txt"
+        file_size = 0
+
+        if file:
+            doc_name = file.filename or "document.txt"
+            content_bytes = await file.read()
+            file_size = len(content_bytes)
+
+            if doc_name.lower().endswith(".pdf"):
+                reader = pypdf.PdfReader(io.BytesIO(content_bytes))
+                extracted_pages = []
+                for p_idx, page in enumerate(reader.pages):
+                    p_text = page.extract_text() or ""
+                    if p_text.strip():
+                        extracted_pages.append(f"--- Page {p_idx + 1} ---\n{p_text}")
+                extracted_text = "\n\n".join(extracted_pages)
+            else:
+                try:
+                    extracted_text = content_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    extracted_text = content_bytes.decode("latin-1", errors="replace")
+        elif raw_text:
+            extracted_text = raw_text
+            doc_name = filename or "pasted_document.txt"
+            file_size = len(raw_text.encode("utf-8"))
+        else:
+            return JSONResponse(status_code=400, content={"error": "No file or text provided."})
+
+        word_count = len(extracted_text.split())
+        char_count = len(extracted_text)
+        est_tokens = max(1, char_count // 4)
+
+        return {
+            "status": "ok",
+            "filename": doc_name,
+            "filesize": file_size,
+            "char_count": char_count,
+            "word_count": word_count,
+            "est_tokens": est_tokens,
+            "text": extracted_text
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to process document: {str(e)}"})
+
+@app.post("/api/chat_turn")
+async def execute_chat_turn(request: Request):
+    try:
+        body = await request.json()
+        user_message = body.get("user_message", "").strip()
+        if not user_message:
+            return JSONResponse(status_code=400, content={"error": "user_message is required."})
+
+        session_id = body.get("session_id") or f"eval_{int(time.time())}"
+        recording_title = body.get("recording_title") or "RECORDING 1"
+        recording_number = int(body.get("recording_number") or 1)
+        model = body.get("model", "gpt-4o")
+        prompt_key = body.get("prompt_key", "executive_summary")
+        custom_instruction = body.get("custom_instruction")
+        document_text = body.get("document_text", "")
+        document_name = body.get("document_name", "")
+        chat_history = body.get("chat_history", [])
+        turn_number = int(body.get("turn_number") or 1)
+
+        import prompts
+        messages = prompts.build_turn_messages(
+            document_text=document_text,
+            user_question=user_message,
+            prompt_key=prompt_key,
+            custom_instruction=custom_instruction,
+            chat_history=chat_history
+        )
+
+        start_time = time.perf_counter()
+        response = await openai.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.2
+        )
+        latency = round(time.perf_counter() - start_time, 3)
+
+        assistant_response = response.choices[0].message.content or "No response generated."
+        p_tokens = response.usage.prompt_tokens if response.usage else max(1, len(user_message) // 4)
+        c_tokens = response.usage.completion_tokens if response.usage else max(1, len(assistant_response) // 4)
+        tot_tokens = response.usage.total_tokens if response.usage else (p_tokens + c_tokens)
+
+        turn_id = f"{session_id}_take_{turn_number}"
+        turn_data = {
+            "turn_id": turn_id,
+            "session_id": session_id,
+            "turn_number": turn_number,
+            "take_number": turn_number,
+            "take_label": f"TAKE #{turn_number}",
+            "recording_title": recording_title,
+            "recording_number": recording_number,
+            "model": model,
+            "user_message": user_message,
+            "assistant_response": assistant_response,
+            "latency_seconds": latency,
+            "prompt_tokens": p_tokens,
+            "completion_tokens": c_tokens,
+            "total_tokens": tot_tokens,
+            "tool_calls": [],
+            "payload": {
+                "turn_id": turn_id,
+                "session_id": session_id,
+                "model": model,
+                "user_message": user_message,
+                "assistant_response": assistant_response,
+                "latency_seconds": latency,
+                "prompt_tokens": p_tokens,
+                "completion_tokens": c_tokens,
+                "total_tokens": tot_tokens,
+                "document_name": document_name,
+                "document_text": document_text,
+                "prompt_key": prompt_key,
+                "custom_instruction": custom_instruction
+            }
+        }
+
+        save_res = save_single_turn_data(turn_data)
+
+        # Update or insert into eval_sessions
+        try:
+            with psycopg.connect(POSTGRES_URL, connect_timeout=3) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO eval_sessions (
+                            session_id, recording_title, recording_number, model,
+                            start_time, end_time, total_turns, total_tokens, total_latency_seconds, first_message, payload
+                        ) VALUES (%s, %s, %s, %s, NOW(), NOW(), 1, %s, %s, %s, %s)
+                        ON CONFLICT (session_id) DO UPDATE SET
+                            total_turns = eval_sessions.total_turns + 1,
+                            total_tokens = eval_sessions.total_tokens + EXCLUDED.total_tokens,
+                            total_latency_seconds = eval_sessions.total_latency_seconds + EXCLUDED.total_latency_seconds,
+                            end_time = NOW();
+                    """, (
+                        session_id, recording_title, recording_number, model,
+                        tot_tokens, latency, user_message[:200], Jsonb(turn_data)
+                    ))
+                    conn.commit()
+        except Exception as pg_err:
+            print(f"Warning: PostgreSQL eval_sessions update error ({pg_err})")
+
+        return {
+            "status": "ok",
+            "turn": turn_data,
+            "save_info": save_res
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to execute chat turn: {str(e)}"})
+
+# Multi-Model Evaluation & Cost Analysis Catalog
+MODEL_PRICING_CATALOG = {
+    # GPT-6 Series
+    "gpt-6-astra": {
+        "tier": "Astra (Flagship)",
+        "role": "Absolute peak intelligence; deep research, complex software engineering, long-horizon agentic tasks",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 10.00,
+        "cached_input_price": 1.00,
+        "output_price": 50.00,
+    },
+    "gpt-6.1-sol": {
+        "tier": "Sol (High-End)",
+        "role": "Near-Astra performance; optimized for production software engineering, code refactoring & complex workflows",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 2.00,
+        "cached_input_price": 0.10,
+        "output_price": 10.00,
+    },
+    "gpt-6.1-terra": {
+        "tier": "Terra (Balanced)",
+        "role": "Balanced everyday intelligence; vision analysis, structured content generation, general assistance",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 1.00,
+        "cached_input_price": 0.05,
+        "output_price": 5.00,
+    },
+    "gpt-6-luna": {
+        "tier": "Luna (High-Volume)",
+        "role": "Ultra-fast low-latency; high-frequency classification, entity extraction, routing, and filtering",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 0.10,
+        "cached_input_price": 0.01,
+        "output_price": 0.50,
+    },
+    "gpt-6-sol": {
+        "tier": "Sol (High-End)",
+        "role": "Initial GPT-6 Sol release; heavy automation and multi-turn enterprise agentic workflows",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 2.00,
+        "cached_input_price": 0.20,
+        "output_price": 10.00,
+    },
+
+    # GPT-5.6 Series
+    "gpt-5.6-sol": {
+        "tier": "Sol (GPT-5.6)",
+        "role": "High-performance reasoning workhorse from GPT-5.6 generation",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 4.00,
+        "cached_input_price": 0.40,
+        "output_price": 20.00,
+    },
+    "gpt-5.6-terra": {
+        "tier": "Terra (GPT-5.6)",
+        "role": "Balanced conversational and multimodal processing from GPT-5.6 generation",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 2.00,
+        "cached_input_price": 0.20,
+        "output_price": 12.00,
+    },
+    "gpt-5.6-luna": {
+        "tier": "Luna (GPT-5.6)",
+        "role": "Cost-effective fast classification and lightweight batch processing from GPT-5.6 generation",
+        "context_window": 1050000,
+        "max_output": 128000,
+        "input_price": 0.20,
+        "cached_input_price": 0.02,
+        "output_price": 1.20,
+    },
+
+    # GPT-5.5 Series
+    "gpt-5.5": {
+        "tier": "Standard Flagship",
+        "role": "Core unified multimodal generation model with adaptive reasoning",
+        "context_window": 1000000,
+        "max_output": 64000,
+        "input_price": 5.00,
+        "cached_input_price": 0.50,
+        "output_price": 30.00,
+    },
+    "gpt-5.5-pro": {
+        "tier": "Pro / Heavy Compute",
+        "role": "Dedicated maximum compute allocation for complex math, proofing, and science tasks",
+        "context_window": 1000000,
+        "max_output": 64000,
+        "input_price": 30.00,
+        "cached_input_price": None,
+        "output_price": 180.00,
+    },
+
+    # GPT-5.4 Series
+    "gpt-5.4": {
+        "tier": "Standard Flagship",
+        "role": "General-purpose reasoning, code assistance, and agent execution",
+        "context_window": 500000,
+        "max_output": 64000,
+        "input_price": 2.50,
+        "cached_input_price": 0.25,
+        "output_price": 15.00,
+    },
+    "gpt-5.4-pro": {
+        "tier": "Pro / Heavy Compute",
+        "role": "High-budget reasoning for difficult symbolic logic and large document synthesis",
+        "context_window": 500000,
+        "max_output": 64000,
+        "input_price": 30.00,
+        "cached_input_price": None,
+        "output_price": 180.00,
+    },
+    "gpt-5.4-mini": {
+        "tier": "Mini (Cost-Optimized)",
+        "role": "Lightweight, responsive model for standard structured outputs and chats",
+        "context_window": 500000,
+        "max_output": 64000,
+        "input_price": 0.75,
+        "cached_input_price": 0.075,
+        "output_price": 4.50,
+    },
+
+    # GPT-5.2 Series
+    "gpt-5.2": {
+        "tier": "Standard Flagship",
+        "role": "Standard general-purpose reasoning model from early GPT-5 series",
+        "context_window": 256000,
+        "max_output": 32768,
+        "input_price": 1.75,
+        "cached_input_price": 0.175,
+        "output_price": 14.00,
+    },
+    "gpt-5.2-pro": {
+        "tier": "Pro / Heavy Compute",
+        "role": "Extended-thinking capability for deep analysis and technical research",
+        "context_window": 256000,
+        "max_output": 32768,
+        "input_price": 21.00,
+        "cached_input_price": None,
+        "output_price": 168.00,
+    },
+
+    # Previous Omni & Legacy Comparison Models
+    "gpt-4o-mini": {
+        "tier": "Omni Mini",
+        "role": "Fast general tasks, chat, high-volume production",
+        "context_window": 128000,
+        "max_output": 16384,
+        "input_price": 0.15,
+        "cached_input_price": 0.075,
+        "output_price": 0.60,
+    },
+    "gpt-4o": {
+        "tier": "Omni Flagship",
+        "role": "General flagship (text, vision, complex reasoning)",
+        "context_window": 128000,
+        "max_output": 16384,
+        "input_price": 2.50,
+        "cached_input_price": 1.25,
+        "output_price": 10.00,
+    },
+    "o3-mini": {
+        "tier": "Reasoning Fast",
+        "role": "High-speed STEM, coding, and math reasoning",
+        "context_window": 200000,
+        "max_output": 100000,
+        "input_price": 1.10,
+        "cached_input_price": 0.55,
+        "output_price": 4.40,
+    },
+    "o1": {
+        "tier": "Reasoning Flagship",
+        "role": "Deep multi-step reasoning & complex architecture",
+        "context_window": 200000,
+        "max_output": 100000,
+        "input_price": 15.00,
+        "cached_input_price": 7.50,
+        "output_price": 60.00,
+    },
+    "chatgpt-4o-latest": {
+        "tier": "Dynamic Web",
+        "role": "Matches live ChatGPT web behavior",
+        "context_window": 128000,
+        "max_output": 16384,
+        "input_price": 5.00,
+        "cached_input_price": 2.50,
+        "output_price": 15.00,
+    },
+    "gpt-4-turbo": {
+        "tier": "GPT-4 Turbo",
+        "role": "Previous-gen GPT-4 flagship workflows",
+        "context_window": 128000,
+        "max_output": 4096,
+        "input_price": 10.00,
+        "cached_input_price": 5.00,
+        "output_price": 30.00,
+    }
+}
+
+judge_semaphore = asyncio.Semaphore(4)
+
+async def judge_response_with_gpt61_sol(
+    user_prompt: str,
+    context: str,
+    answer: str,
+    candidate_name: str = "",
+    system_prompt: str = "",
+    reference_answer: str = "",
+    fallback_score: int = 90,
+    judge_model_id: str = "gpt-6.1-sol"
+) -> dict:
+    """
+    Invokes the selected GPT judge model (e.g., GPT-6.1-Sol, GPT-4o, etc.)
+    with deep reasoning to act as an authoritative AI Judge, grading the answer from 0-100 across 4 rubric dimensions.
+    Compares against the reference baseline answer from the recorded take as ground truth when available.
+    """
+    if not answer or answer.strip() == "" or answer == "No response returned.":
+        return {
+            "quality_score": 0,
+            "critique": "Candidate produced no response.",
+            "accuracy": 0,
+            "adherence": 0,
+            "depth": 0,
+            "presentation": 0,
+            "judge_model": f"{judge_model_id} (extra high)"
+        }
+
+    judge_sys_prompt = (
+        "You are an impartial, highly rigorous Senior AI Evaluation Judge utilizing maximum reasoning depth. "
+        "Your task is to critically grade a candidate model/prompt response to a user query and reference document. "
+        "When a Reference Baseline Answer (from an existing recorded take) is provided, use it as ground truth to evaluate factual correctness, completeness, and whether key document points were captured. "
+        "Score objectively on a 0-100 scale across 4 explicit pillars (each 0-25):\n"
+        "1. Accuracy & Document Grounding (0-25): Factual fidelity to the provided document and alignment with the reference baseline answer.\n"
+        "2. Instruction Adherence & Constraints (0-25): Faithfulness to the prompt mandate, formatting rules, and tone.\n"
+        "3. Semantic Depth & Analytical Reasoning (0-25): Thoroughness, insight, actionable logic, avoidance of superficial filler.\n"
+        "4. Structure & Presentation Clarity (0-25): Professional layout, markdown headings, readability, and scannability.\n\n"
+        "Respond with a JSON object ONLY containing:\n"
+        "{\n"
+        '  "score": <integer 0 to 100>,\n'
+        '  "accuracy": <integer 0 to 25>,\n'
+        '  "adherence": <integer 0 to 25>,\n'
+        '  "depth": <integer 0 to 25>,\n'
+        '  "presentation": <integer 0 to 25>,\n'
+        '  "critique": "<2 concise sentences summarizing strengths, document fidelity, and areas for improvement>"\n'
+        "}"
+    )
+
+    candidate_spec = f"Target Candidate: {candidate_name}\n" if candidate_name else ""
+    sys_spec = f"[APPLIED SYSTEM PROMPT / MANDATE]\n{system_prompt[:1500]}\n\n" if system_prompt else ""
+    ctx_spec = f"[REFERENCE CONTEXT / DOCUMENT]\n{context[:3000]}\n\n" if context else ""
+    ref_spec = f"[REFERENCE BASELINE ANSWER (FROM RECORDED TAKE / GROUND TRUTH)]\n{reference_answer[:2000]}\n\n" if reference_answer else ""
+
+    user_eval_content = (
+        f"{candidate_spec}"
+        f"{sys_spec}"
+        f"[USER QUESTION / PROMPT]\n{user_prompt}\n\n"
+        f"{ctx_spec}"
+        f"{ref_spec}"
+        f"[CANDIDATE RESPONSE TO EVALUATE]\n{answer}\n\n"
+        "Evaluate the candidate response by looking up the document context and comparing against the reference baseline answer. Provide your authoritative evaluation in JSON format."
+    )
+
+    actual_judge = judge_model_id or "gpt-6.1-sol"
+
+    async with judge_semaphore:
+        try:
+            extra_kwargs = {}
+            # Apply reasoning_effort if supported by the model
+            if actual_judge.startswith("gpt-6") or actual_judge in ["o1", "o3-mini"]:
+                extra_kwargs["reasoning_effort"] = "xhigh" if actual_judge.startswith("gpt-6") else "high"
+
+            resp = await openai.chat.completions.create(
+                model=actual_judge,
+                messages=[
+                    {"role": "system", "content": judge_sys_prompt},
+                    {"role": "user", "content": user_eval_content}
+                ],
+                max_completion_tokens=2500,
+                response_format={"type": "json_object"},
+                **extra_kwargs
+            )
+            raw_content = resp.choices[0].message.content or "{}"
+            parsed = json.loads(raw_content)
+            score = int(parsed.get("score", fallback_score))
+            score = max(0, min(100, score))
+            return {
+                "quality_score": score,
+                "critique": parsed.get("critique", f"Evaluated by {actual_judge} with high reasoning."),
+                "accuracy": parsed.get("accuracy", 23),
+                "adherence": parsed.get("adherence", 23),
+                "depth": parsed.get("depth", 22),
+                "presentation": parsed.get("presentation", 22),
+                "judge_model": f"{actual_judge} (LLM as Judge)"
+            }
+        except Exception as e:
+            print(f"[Judge {actual_judge} warning]: {e}. Falling back to calibrated heuristic score.")
+            return {
+                "quality_score": fallback_score,
+                "critique": f"[Fallback Rubric] Automated calibrated score: {fallback_score}% ({str(e)[:70]})",
+                "accuracy": 22,
+                "adherence": 22,
+                "depth": 22,
+                "presentation": 22,
+                "judge_model": f"{actual_judge} (fallback)"
+            }
+
+async def query_single_model_eval(
+    model_id: str,
+    messages: list,
+    user_message: str = "",
+    document_text: str = "",
+    reference_answer: str = "",
+    judge_model_id: str = "gpt-6.1-sol"
+):
+    spec = MODEL_PRICING_CATALOG.get(model_id, {
+        "tier": "Custom",
+        "role": "General LLM",
+        "context_window": 128000,
+        "max_output": 4096,
+        "input_price": 1.0,
+        "cached_input_price": 0.5,
+        "output_price": 2.0
+    })
+
+    start_time = time.perf_counter()
+    try:
+        if model_id in ["o1", "o3-mini"]:
+            cleaned_messages = []
+            for m in messages:
+                if m.get("role") == "system":
+                    cleaned_messages.append({"role": "developer", "content": m["content"]})
+                else:
+                    cleaned_messages.append(m)
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=cleaned_messages,
+                max_completion_tokens=4000
+            )
+        elif model_id.startswith("gpt-6") or model_id.startswith("gpt-5"):
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                max_completion_tokens=4000
+            )
+        else:
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                max_completion_tokens=4000,
+                temperature=0.2
+            )
+
+        latency = round(time.perf_counter() - start_time, 3)
+        answer = response.choices[0].message.content or "No response returned."
+        p_tokens = response.usage.prompt_tokens if response.usage else max(1, len(messages[-1].get("content", "")) // 4)
+        c_tokens = response.usage.completion_tokens if response.usage else max(1, len(answer) // 4)
+        tot_tokens = response.usage.total_tokens if response.usage else (p_tokens + c_tokens)
+
+        input_cost = (p_tokens / 1_000_000.0) * spec["input_price"]
+        output_cost = (c_tokens / 1_000_000.0) * spec["output_price"]
+        total_cost = round(input_cost + output_cost, 6)
+
+        answer_len = len(answer.strip())
+        structure_bonus = 15 if ("\n" in answer or "#" in answer or "-" in answer or "1." in answer) else 0
+        depth_score = min(70, int((answer_len / 350.0) * 70))
+        speed_score = max(5, int(15 - min(10, latency)))
+        heuristic_score = min(99, max(45, depth_score + structure_bonus + speed_score))
+
+        # LLM as Judge: evaluate via selected Judge with Reasoning and compare against reference answer
+        user_prompt_text = user_message or (messages[-1].get("content", "") if messages else "")
+        judge_result = await judge_response_with_gpt61_sol(
+            user_prompt=user_prompt_text,
+            context=document_text,
+            answer=answer,
+            candidate_name=model_id,
+            reference_answer=reference_answer,
+            fallback_score=heuristic_score,
+            judge_model_id=judge_model_id
+        )
+
+        quality_score = judge_result.get("quality_score", heuristic_score)
+        judge_critique = judge_result.get("critique", "")
+        judge_model = judge_result.get("judge_model", f"{judge_model_id} (LLM as Judge)")
+        judge_breakdown = {
+            "accuracy": judge_result.get("accuracy", 23),
+            "adherence": judge_result.get("adherence", 23),
+            "depth": judge_result.get("depth", 22),
+            "presentation": judge_result.get("presentation", 22)
+        }
+
+        efficiency_ratio = round(quality_score / (total_cost * 1000.0 + 0.0001), 2)
+
+        return {
+            "model_id": model_id,
+            "status": "success",
+            "tier": spec["tier"],
+            "role": spec["role"],
+            "context_window": spec["context_window"],
+            "max_output": spec["max_output"],
+            "input_price": spec["input_price"],
+            "cached_input_price": spec["cached_input_price"],
+            "output_price": spec["output_price"],
+            "answer": answer,
+            "prompt_tokens": p_tokens,
+            "completion_tokens": c_tokens,
+            "total_tokens": tot_tokens,
+            "input_cost": round(input_cost, 6),
+            "output_cost": round(output_cost, 6),
+            "total_cost": total_cost,
+            "latency": latency,
+            "quality_score": quality_score,
+            "judge_critique": judge_critique,
+            "judge_model": judge_model,
+            "judge_breakdown": judge_breakdown,
+            "efficiency_ratio": efficiency_ratio,
+            "error": None
+        }
+    except Exception as e:
+        latency = round(time.perf_counter() - start_time, 3)
+        err_msg = str(e)
+        status_label = "deprecated" if "deprecated" in err_msg.lower() else "unavailable"
+        return {
+            "model_id": model_id,
+            "status": status_label,
+            "tier": spec["tier"],
+            "role": spec["role"],
+            "context_window": spec["context_window"],
+            "max_output": spec["max_output"],
+            "input_price": spec["input_price"],
+            "cached_input_price": spec["cached_input_price"],
+            "output_price": spec["output_price"],
+            "answer": None,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "total_cost": 0.0,
+            "latency": latency,
+            "quality_score": 0,
+            "judge_critique": "Failed before evaluation.",
+            "judge_model": "gpt-6.1-sol (extra high)",
+            "judge_breakdown": {"accuracy": 0, "adherence": 0, "depth": 0, "presentation": 0},
+            "efficiency_ratio": 0.0,
+            "error": err_msg
+        }
+
+@app.post("/api/multi_model_eval")
+async def execute_multi_model_eval(request: Request):
+    try:
+        body = await request.json()
+        user_message = body.get("user_message", "").strip()
+        if not user_message:
+            return JSONResponse(status_code=400, content={"error": "user_message prompt is required."})
+
+        document_text = body.get("document_text", "")
+        reference_response = body.get("reference_response", "")
+        prompt_key = body.get("prompt_key", "executive_summary")
+        custom_instruction = body.get("custom_instruction")
+        chat_history = body.get("chat_history", [])
+        
+        judge_model_id = body.get("judge_model", "gpt-6.1-sol")
+        target_models = body.get("models") or [
+            "gpt-4o-mini",
+            "gpt-4o",
+            "o3-mini",
+            "o1",
+            "chatgpt-4o-latest",
+            "gpt-4-turbo"
+        ]
+
+        import prompts
+        messages = prompts.build_turn_messages(
+            document_text=document_text,
+            user_question=user_message,
+            prompt_key=prompt_key,
+            custom_instruction=custom_instruction,
+            chat_history=chat_history
+        )
+
+        tasks = [
+            query_single_model_eval(
+                mid,
+                messages,
+                user_message=user_message,
+                document_text=document_text,
+                reference_answer=reference_response,
+                judge_model_id=judge_model_id
+            )
+            for mid in target_models
+        ]
+        eval_results = await asyncio.gather(*tasks)
+
+        # Graph Data: Sort evaluated models
+        successful_models = [r for r in eval_results if r["status"] == "success"]
+
+        # Calculate sweet spot / winner
+        winner = None
+        intersection_point = None
+
+        if successful_models:
+            # Sort by total_cost ascending
+            sorted_by_cost = sorted(successful_models, key=lambda x: x["total_cost"])
+            
+            # Winner is selected based on Pareto balance (highest quality score with reasonable cost)
+            # Normalize cost and score
+            max_c = max([m["total_cost"] for m in sorted_by_cost]) or 1.0
+            min_c = min([m["total_cost"] for m in sorted_by_cost]) or 0.0
+            
+            best_balance_model = None
+            best_balance_val = -999.0
+            
+            for m in sorted_by_cost:
+                norm_score = m["quality_score"] / 100.0
+                norm_cost = (m["total_cost"] - min_c) / (max_c - min_c + 1e-6)
+                # Pareto utility: score benefit minus cost penalty
+                utility = (norm_score * 0.75) - (norm_cost * 0.35)
+                if utility > best_balance_val:
+                    best_balance_val = utility
+                    best_balance_model = m
+
+            winner = best_balance_model or sorted_by_cost[0]
+            judge_verdict = winner.get("judge_critique") or "Optimal balance of intelligence and cost."
+            intersection_point = {
+                "model_id": winner["model_id"],
+                "tier": winner["tier"],
+                "quality_score": winner["quality_score"],
+                "total_cost": winner["total_cost"],
+                "judge_model": winner.get("judge_model", f"{judge_model_id} (LLM as Judge)"),
+                "judge_critique": judge_verdict,
+                "rationale": f"Optimal Pareto balance: '{winner['model_id']}' scored {winner['quality_score']}% by {judge_model_id} Judge at ${winner['total_cost']:.5f}. {judge_verdict}"
+            }
+        else:
+            intersection_point = None
+
+        # Build reference table data of all models tested
+        reference_table = []
+        for mid in target_models:
+            spec = MODEL_PRICING_CATALOG.get(mid, {})
+            reference_table.append({
+                "model_id": mid,
+                "tier": spec.get("tier", "Custom"),
+                "role": spec.get("role", "General"),
+                "context_window": spec.get("context_window", 128000),
+                "max_output": spec.get("max_output", 4096),
+                "input_price": spec.get("input_price", 0.0),
+                "cached_input_price": spec.get("cached_input_price", 0.0),
+                "output_price": spec.get("output_price", 0.0),
+            })
+
+        # Sort reference table in ascending order by input price, then output price
+        sorted_reference_table = sorted(
+            reference_table,
+            key=lambda m: (m.get("input_price", 0.0), m.get("output_price", 0.0))
+        )
+
+        # Sort empirical results in ascending order of price (total_cost), then performance (quality_score)
+        sorted_eval_results = sorted(
+            eval_results,
+            key=lambda r: (
+                0 if r["status"] == "success" else 1,
+                r["total_cost"],
+                r["quality_score"],
+                r["input_price"]
+            )
+        )
+
+        return {
+            "status": "ok",
+            "evaluated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+            "judge_model": f"{judge_model_id} (LLM as Judge)",
+            "judge_mode": f"LLM as Judge ({judge_model_id})",
+            "user_prompt": user_message,
+            "document_name": body.get("document_name", ""),
+            "selected_take_info": body.get("selected_take_info"),
+            "reference_table": sorted_reference_table,
+            "results": sorted_eval_results,
+            "winner": winner,
+            "intersection_point": intersection_point
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to execute multi-model evaluation: {str(e)}"})
+
+
+@app.post("/api/single_model_eval")
+async def execute_single_model_eval(request: Request):
+    """Evaluates a single model individually to enable real-time per-model loading progress in the UI."""
+    try:
+        body = await request.json()
+        user_message = body.get("user_message", "").strip()
+        if not user_message:
+            return JSONResponse(status_code=400, content={"error": "user_message prompt is required."})
+
+        document_text = body.get("document_text", "")
+        reference_response = body.get("reference_response", "")
+        prompt_key = body.get("prompt_key", "executive_summary")
+        custom_instruction = body.get("custom_instruction")
+        chat_history = body.get("chat_history", [])
+        
+        judge_model_id = body.get("judge_model", "gpt-6.1-sol")
+        model_id = body.get("model_id", "gpt-4o")
+
+        import prompts
+        messages = prompts.build_turn_messages(
+            document_text=document_text,
+            user_question=user_message,
+            prompt_key=prompt_key,
+            custom_instruction=custom_instruction,
+            chat_history=chat_history
+        )
+
+        result = await query_single_model_eval(
+            model_id,
+            messages,
+            user_message=user_message,
+            document_text=document_text,
+            reference_answer=reference_response,
+            judge_model_id=judge_model_id
+        )
+
+        return {
+            "status": "ok",
+            "result": result
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to evaluate model {model_id}: {str(e)}"})
+
+async def query_single_prompt_eval(
+    model_id: str,
+    prompt_item: dict,
+    user_message: str,
+    document_text: str = "",
+    document_name: str = "",
+    reference_response: str = "",
+    judge_model_id: str = "gpt-6.1-sol"
+):
+    spec = MODEL_PRICING_CATALOG.get(model_id, {
+        "tier": "General",
+        "role": "General Assistant",
+        "context_window": 128000,
+        "max_output": 4096,
+        "input_price": 1.0,
+        "cached_input_price": 0.5,
+        "output_price": 2.0
+    })
+
+    system_prompt = prompt_item.get("system_prompt", "You are a helpful assistant.")
+    prompt_name = prompt_item.get("name", f"Prompt #{prompt_item.get('id', 1)}")
+    prompt_id = prompt_item.get("id", 1)
+    prompt_description = prompt_item.get("description", "")
+
+    messages = [
+        {"role": "system", "content": system_prompt}
+    ]
+    if document_text and document_text.strip():
+        doc_header = f"--- REFERENCE DOCUMENT CONTEXT: {document_name or 'Uploaded Document'} ---"
+        messages.append({
+            "role": "user",
+            "content": f"{doc_header}\n{document_text}\n-----------------------------------\n\nQuestion / Task:\n{user_message}\n\nPlease look up the provided document above and answer the question accurately and thoroughly based on its contents."
+        })
+    else:
+        messages.append({
+            "role": "user",
+            "content": user_message
+        })
+
+    start_time = time.perf_counter()
+    try:
+        if model_id in ["o1", "o3-mini"]:
+            cleaned_messages = []
+            for m in messages:
+                if m.get("role") == "system":
+                    cleaned_messages.append({"role": "developer", "content": m["content"]})
+                else:
+                    cleaned_messages.append(m)
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=cleaned_messages,
+                max_completion_tokens=4000
+            )
+        elif model_id.startswith("gpt-6") or model_id.startswith("gpt-5"):
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                max_completion_tokens=4000
+            )
+        else:
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=messages,
+                max_completion_tokens=4000,
+                temperature=0.2
+            )
+
+        latency = round(time.perf_counter() - start_time, 3)
+        answer = response.choices[0].message.content or "No response returned."
+        p_tokens = response.usage.prompt_tokens if response.usage else max(1, (len(system_prompt) + len(user_message)) // 4)
+        c_tokens = response.usage.completion_tokens if response.usage else max(1, len(answer) // 4)
+        tot_tokens = response.usage.total_tokens if response.usage else (p_tokens + c_tokens)
+
+        input_cost = (p_tokens / 1_000_000.0) * spec["input_price"]
+        output_cost = (c_tokens / 1_000_000.0) * spec["output_price"]
+        total_cost = round(input_cost + output_cost, 6)
+
+        answer_len = len(answer.strip())
+        lowered_ans = answer.lower()
+        lowered_name = prompt_name.lower()
+
+        # 1. Structure & Layout Evaluation (Base 25-30 pts)
+        structure_score = 25
+        if "\n" in answer and ("#" in answer or "-" in answer or "1." in answer or "{" in answer):
+            structure_score += 5
+
+        # 2. Archetype-Specific Rigor & Instruction Adherence (Up to 40 pts)
+        adherence_score = 28
+
+        # Archetype 1: Strict Concise Analyst
+        if "concise" in lowered_name or "analyst" in lowered_name:
+            word_count = len(answer.strip().split())
+            if word_count <= 180:
+                adherence_score += 10
+            elif word_count <= 250:
+                adherence_score += 6
+            else:
+                adherence_score += 2
+            if any(char.isdigit() for char in answer):
+                adherence_score += 2
+
+        # Archetype 2: Step-by-Step Chain-of-Thought
+        elif "chain" in lowered_name or "step" in lowered_name or "thought" in lowered_name:
+            if "step 1" in lowered_ans or "phase 1" in lowered_ans or "1." in answer:
+                adherence_score += 6
+            if "step 2" in lowered_ans or "phase 2" in lowered_ans or "2." in answer:
+                adherence_score += 4
+            if "therefore" in lowered_ans or "conclusion" in lowered_ans or "deduction" in lowered_ans:
+                adherence_score += 2
+
+        # Archetype 3: Evidentiary Fact-Grounded Verifier
+        elif "fact" in lowered_name or "verifier" in lowered_name or "evidentiary" in lowered_name:
+            if "[" in answer and "]" in answer:
+                adherence_score += 6
+            if '"' in answer or "'" in answer or "citation" in lowered_ans:
+                adherence_score += 4
+            if "context" in lowered_ans or "document" in lowered_ans or "not found" in lowered_ans:
+                adherence_score += 2
+
+        # Archetype 4: Senior Executive Briefing (BLUF)
+        elif "executive" in lowered_name or "bluf" in lowered_name:
+            if "bluf" in lowered_ans or "bottom line" in lowered_ans:
+                adherence_score += 6
+            if "highlight" in lowered_ans or "strategic" in lowered_ans:
+                adherence_score += 4
+            if "action" in lowered_ans or "recommendation" in lowered_ans:
+                adherence_score += 2
+
+        # Archetype 5: Structured JSON Schema Pipeline
+        elif "json" in lowered_name or "schema" in lowered_name:
+            try:
+                import json
+                clean_json = answer.strip()
+                if clean_json.startswith("```json"):
+                    clean_json = clean_json[7:]
+                if clean_json.startswith("```"):
+                    clean_json = clean_json[3:]
+                if clean_json.endswith("```"):
+                    clean_json = clean_json[:-3]
+                parsed = json.loads(clean_json.strip())
+                adherence_score += 8
+                if isinstance(parsed, dict) and ("summary" in parsed or "key_findings" in parsed):
+                    adherence_score += 4
+            except Exception:
+                if "{" in answer and "}" in answer:
+                    adherence_score += 5
+
+        # Archetype 6: Socratic Pedagogical Tutor
+        elif "tutor" in lowered_name or "socratic" in lowered_name or "pedagogical" in lowered_name:
+            if "analogy" in lowered_ans or "imagine" in lowered_ans or "like a" in lowered_ans:
+                adherence_score += 6
+            if "?" in answer:
+                adherence_score += 4
+            if "concept" in lowered_ans or "intuition" in lowered_ans:
+                adherence_score += 2
+
+        # Archetype 7: Adversarial Risk Auditor
+        elif "risk" in lowered_name or "auditor" in lowered_name or "adversarial" in lowered_name:
+            if "assumption" in lowered_ans or "vulnerability" in lowered_ans or "risk" in lowered_ans:
+                adherence_score += 6
+            if "failure" in lowered_ans or "vector" in lowered_ans or "downside" in lowered_ans:
+                adherence_score += 4
+            if "mitigation" in lowered_ans or "hardening" in lowered_ans:
+                adherence_score += 2
+
+        # Archetype 8: Quantitative Formula-First
+        elif "formula" in lowered_name or "quantitative" in lowered_name:
+            if "$" in answer or "=" in answer or "\\" in answer or "o(" in lowered_ans:
+                adherence_score += 6
+            if any(char.isdigit() for char in answer):
+                adherence_score += 4
+            if "equation" in lowered_ans or "parameter" in lowered_ans or "bound" in lowered_ans:
+                adherence_score += 2
+
+        # Archetype 9: Zero-Shot Direct Technical Responder
+        elif "zero" in lowered_name or "direct" in lowered_name or "technical" in lowered_name:
+            has_no_fluff = not any(fluff in lowered_ans[:60] for fluff in ["hello", "hi there", "sure,", "certainly", "hope this helps"])
+            if has_no_fluff:
+                adherence_score += 6
+            if "```" in answer or "code" in lowered_ans or "function" in lowered_ans or "parameter" in lowered_ans:
+                adherence_score += 4
+            adherence_score += 2
+
+        # Archetype 10: Multi-Perspective Synthesizer
+        elif "synthesizer" in lowered_name or "perspective" in lowered_name or "multi" in lowered_name:
+            lenses_found = 0
+            if "operational" in lowered_ans or "lens 1" in lowered_ans:
+                lenses_found += 1
+            if "financial" in lowered_ans or "cost" in lowered_ans or "lens 2" in lowered_ans:
+                lenses_found += 1
+            if "technical" in lowered_ans or "robustness" in lowered_ans or "lens 3" in lowered_ans:
+                lenses_found += 1
+            adherence_score += min(12, lenses_found * 4)
+        else:
+            adherence_score += 8
+
+        # 3. Substance & Semantic Depth (Up to 20 pts)
+        if "concise" in lowered_name:
+            depth_score = min(18, int((answer_len / 200.0) * 18)) if answer_len <= 1200 else 14
+        else:
+            depth_score = min(20, int((answer_len / 400.0) * 20))
+
+        # 4. Latency / Speed Efficiency (Up to 10 pts)
+        speed_score = max(5, int(10 - min(5, latency * 0.8)))
+
+        # Calculate heuristic baseline score for fallback
+        raw_score = structure_score + adherence_score + depth_score + speed_score
+        heuristic_score = min(99, max(89, int(raw_score)))
+
+        # LLM as Judge: evaluate via selected Judge with Reasoning comparing against reference response
+        judge_result = await judge_response_with_gpt61_sol(
+            user_prompt=user_message,
+            context=document_text,
+            answer=answer,
+            candidate_name=f"{prompt_name} (Prompt #{prompt_id})",
+            system_prompt=system_prompt,
+            reference_answer=reference_response,
+            fallback_score=heuristic_score,
+            judge_model_id=judge_model_id
+        )
+
+        quality_score = judge_result.get("quality_score", heuristic_score)
+        judge_critique = judge_result.get("critique", "")
+        judge_model = judge_result.get("judge_model", f"{judge_model_id} (LLM as Judge)")
+        judge_breakdown = {
+            "accuracy": judge_result.get("accuracy", 24),
+            "adherence": judge_result.get("adherence", 24),
+            "depth": judge_result.get("depth", 23),
+            "presentation": judge_result.get("presentation", 23)
+        }
+
+        efficiency_ratio = round(quality_score / (total_cost * 1000.0 + 0.0001), 2)
+
+        return {
+            "id": prompt_id,
+            "name": prompt_name,
+            "description": prompt_description,
+            "system_prompt": system_prompt,
+            "model_id": model_id,
+            "status": "success",
+            "answer": answer,
+            "prompt_tokens": p_tokens,
+            "completion_tokens": c_tokens,
+            "total_tokens": tot_tokens,
+            "input_cost": round(input_cost, 6),
+            "output_cost": round(output_cost, 6),
+            "total_cost": total_cost,
+            "latency": latency,
+            "quality_score": quality_score,
+            "judge_critique": judge_critique,
+            "judge_model": judge_model,
+            "judge_breakdown": judge_breakdown,
+            "efficiency_ratio": efficiency_ratio,
+            "error": None
+        }
+    except Exception as e:
+        latency = round(time.perf_counter() - start_time, 3)
+        return {
+            "id": prompt_id,
+            "name": prompt_name,
+            "description": prompt_description,
+            "system_prompt": system_prompt,
+            "model_id": model_id,
+            "status": "error",
+            "answer": None,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "input_cost": 0.0,
+            "output_cost": 0.0,
+            "total_cost": 0.0,
+            "latency": latency,
+            "quality_score": 0,
+            "judge_critique": "Failed before evaluation.",
+            "judge_model": "gpt-6.1-sol (extra high)",
+            "judge_breakdown": {"accuracy": 0, "adherence": 0, "depth": 0, "presentation": 0},
+            "efficiency_ratio": 0.0,
+            "error": str(e)
+        }
+
+@app.post("/api/prompt_eval")
+async def execute_prompt_eval(request: Request):
+    try:
+        body = await request.json()
+        user_message = body.get("user_message", "").strip()
+        if not user_message:
+            return JSONResponse(status_code=400, content={"error": "user_message is required."})
+
+        model_id = body.get("model_id", "gpt-4o-mini")
+        judge_model_id = body.get("judge_model", "gpt-6.1-sol")
+        document_text = body.get("document_text", "")
+        document_name = body.get("document_name", "")
+        reference_response = body.get("reference_response", "")
+        system_prompts = body.get("system_prompts", [])
+
+        if not system_prompts:
+            return JSONResponse(status_code=400, content={"error": "At least one system prompt is required."})
+
+        tasks = [
+            query_single_prompt_eval(
+                model_id=model_id,
+                prompt_item=p_item,
+                user_message=user_message,
+                document_text=document_text,
+                document_name=document_name,
+                reference_response=reference_response,
+                judge_model_id=judge_model_id
+            )
+            for p_item in system_prompts
+        ]
+        eval_results = await asyncio.gather(*tasks)
+
+        successful_prompts = [r for r in eval_results if r["status"] == "success"]
+
+        winner = None
+        intersection_point = None
+
+        if successful_prompts:
+            # Sort by total_cost ascending
+            sorted_by_cost = sorted(successful_prompts, key=lambda x: x["total_cost"])
+            max_c = max([m["total_cost"] for m in sorted_by_cost]) or 1.0
+            min_c = min([m["total_cost"] for m in sorted_by_cost]) or 0.0
+
+            best_balance_prompt = None
+            best_balance_val = -999.0
+
+            for m in sorted_by_cost:
+                norm_score = m["quality_score"] / 100.0
+                norm_cost = (m["total_cost"] - min_c) / (max_c - min_c + 1e-6)
+                # Pareto utility: score benefit minus cost penalty
+                utility = (norm_score * 0.70) - (norm_cost * 0.30)
+                if utility > best_balance_val:
+                    best_balance_val = utility
+                    best_balance_prompt = m
+
+            winner = best_balance_prompt or sorted_by_cost[0]
+            judge_verdict = winner.get("judge_critique") or "Optimal response quality per dollar spent."
+            intersection_point = {
+                "prompt_id": winner["id"],
+                "prompt_name": winner["name"],
+                "quality_score": winner["quality_score"],
+                "total_cost": winner["total_cost"],
+                "judge_model": winner.get("judge_model", f"{judge_model_id} (LLM as Judge)"),
+                "judge_critique": judge_verdict,
+                "rationale": f"Optimal Pareto balance: '{winner['name']}' achieved a {winner['quality_score']}% quality score by {judge_model_id} Judge at ${winner['total_cost']:.5f} turn cost. {judge_verdict}"
+            }
+
+        sorted_results = sorted(
+            eval_results,
+            key=lambda r: (
+                0 if r["status"] == "success" else 1,
+                r["total_cost"],
+                r["quality_score"]
+            )
+        )
+
+        model_spec = MODEL_PRICING_CATALOG.get(model_id, {
+            "tier": "General",
+            "role": "General Assistant",
+            "context_window": 128000,
+            "max_output": 4096,
+            "input_price": 1.0,
+            "cached_input_price": 0.5,
+            "output_price": 2.0
+        })
+
+        return {
+            "status": "ok",
+            "evaluated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+            "judge_model": f"{judge_model_id} (LLM as Judge)",
+            "judge_mode": f"LLM as Judge ({judge_model_id})",
+            "model_id": model_id,
+            "model_spec": model_spec,
+            "user_prompt": user_message,
+            "document_name": document_name,
+            "reference_response": reference_response,
+            "results": sorted_results,
+            "winner": winner,
+            "intersection_point": intersection_point
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to execute prompt evaluation: {str(e)}"})
+
+
+@app.post("/api/single_prompt_eval")
+async def execute_single_prompt_eval(request: Request):
+    """Evaluates a single system prompt individually to enable live process streaming in the Prompt Evals tab."""
+    try:
+        body = await request.json()
+        user_message = body.get("user_message", "").strip()
+        if not user_message:
+            return JSONResponse(status_code=400, content={"error": "user_message is required."})
+
+        model_id = body.get("model_id", "gpt-4o-mini")
+        judge_model_id = body.get("judge_model", "gpt-6.1-sol")
+        document_text = body.get("document_text", "")
+        document_name = body.get("document_name", "")
+        reference_response = body.get("reference_response", "")
+        prompt_item = body.get("prompt_item")
+
+        if not prompt_item:
+            return JSONResponse(status_code=400, content={"error": "prompt_item is required."})
+
+        result = await query_single_prompt_eval(
+            model_id=model_id,
+            prompt_item=prompt_item,
+            user_message=user_message,
+            document_text=document_text,
+            document_name=document_name,
+            reference_response=reference_response,
+            judge_model_id=judge_model_id
+        )
+
+        return {
+            "status": "ok",
+            "result": result
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to evaluate prompt: {str(e)}"})
+
+@app.post("/api/generate_system_prompts")
+async def generate_system_prompts_endpoint(request: Request):
+    """
+    Generate custom, production-grade system prompt candidates using any selected GPT model,
+    adhering to prompt engineering industry standards based on task context and requested count.
+    """
+    try:
+        body = await request.json()
+        model_id = body.get("model_id", "gpt-4o")
+        num_prompts = int(body.get("num_prompts", 5))
+        # Industry standard bounds
+        num_prompts = max(1, min(15, num_prompts))
+        
+        user_message = body.get("user_message", "").strip()
+        document_text = body.get("document_text", "")
+        document_name = body.get("document_name", "")
+        domain_hint = body.get("domain_hint", "Document Intelligence & Technical Auditing")
+
+        generation_sys_instruction = (
+            "You are a world-class Prompt Engineer and AI Alignment Architect specializing in high-performance "
+            "System Prompt design for enterprise LLMs adhering to cutting-edge industry standards (BLUF, Chain-of-Thought, "
+            "Negative Constraints, Evidentiary Citation Guardrails, Multi-Perspective Decomposition, and Persona Anchoring).\n\n"
+            f"Generate exactly {num_prompts} distinctly varied, production-grade system prompts tailored to the user's task/domain.\n"
+            "CRITICAL REQUIREMENT: Each system prompt MUST be thorough, comprehensive, highly detailed, and exhaustive (~250-400 words minimum). Never produce short or generic prompts. "
+            "Every single prompt must include:\n"
+            "- A distinct persona/archetype name (e.g. 'Forensic Contract & Risk Auditor', 'Socratic Deep Explainer', 'BLUF Boardroom Executive Advisor', 'Formal Quantitative Specialist', etc.)\n"
+            "- A crisp 1-sentence operational description\n"
+            "- ### CORE OBJECTIVES (Clear high-stakes mission statement)\n"
+            "- ### METHODOLOGY & STEP-BY-STEP EXECUTION PROTOCOL (Explicit phases, verification pipeline, decomposition rules)\n"
+            "- ### CONSTRAINTS & NEGATIVE PROMPTING (Strict negative constraints, forbidden fluff, quote requirements, citation format)\n\n"
+            "Output a JSON object ONLY with the following schema:\n"
+            "{\n"
+            '  "prompts": [\n'
+            '    {\n'
+            '      "id": 1,\n'
+            '      "name": "<Distinct Strategy / Persona Name>",\n'
+            '      "description": "<Crisp 1-sentence operational summary>",\n'
+            '      "word_count": "~320 words",\n'
+            '      "system_prompt": "<Complete, multi-paragraph, highly detailed production system prompt text with headers and numbered rules>"\n'
+            '    }\n'
+            '  ]\n'
+            "}"
+        )
+
+        user_context_payload = (
+            f"Task Domain: {domain_hint}\n"
+            f"Target Sample Size (number of prompts): {num_prompts}\n"
+        )
+        if user_message:
+            user_context_payload += f"\nExample User Inquiry:\n{user_message[:1000]}\n"
+        if document_text:
+            user_context_payload += f"\nRelevant Document Preview ({document_name or 'Uploaded Document'}):\n{document_text[:1500]}\n"
+
+        user_context_payload += "\nGenerate the system prompt variations now in the specified JSON format."
+
+        start_time = time.perf_counter()
+        
+        extra_kwargs = {}
+        if model_id in ["o1", "o3-mini"]:
+            cleaned_messages = [
+                {"role": "developer", "content": generation_sys_instruction},
+                {"role": "user", "content": user_context_payload}
+            ]
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=cleaned_messages,
+                max_completion_tokens=12000
+            )
+        else:
+            if model_id.startswith("gpt-6"):
+                extra_kwargs["reasoning_effort"] = "high"
+            response = await openai.chat.completions.create(
+                model=model_id,
+                messages=[
+                    {"role": "system", "content": generation_sys_instruction},
+                    {"role": "user", "content": user_context_payload}
+                ],
+                response_format={"type": "json_object"},
+                max_completion_tokens=12000,
+                **extra_kwargs
+            )
+
+        latency = round(time.perf_counter() - start_time, 3)
+        raw_content = response.choices[0].message.content or "{}"
+        parsed = json.loads(raw_content)
+        prompts_list = parsed.get("prompts", [])
+
+        # Assign clean IDs and calculate word counts
+        formatted_prompts = []
+        for idx, p in enumerate(prompts_list[:num_prompts]):
+            p_text = p.get("system_prompt", "").strip()
+            w_count = len(p_text.split())
+            formatted_prompts.append({
+                "id": idx + 1,
+                "name": p.get("name", f"Strategy #{idx + 1}"),
+                "description": p.get("description", "Model-generated system prompt candidate."),
+                "word_count": f"~{w_count} words",
+                "system_prompt": p_text
+            })
+
+        return {
+            "status": "ok",
+            "model_used": model_id,
+            "count": len(formatted_prompts),
+            "latency": latency,
+            "prompts": formatted_prompts
+        }
+    except Exception as e:
+        print(f"[Generate System Prompts Error]: {e}")
+        return JSONResponse(status_code=500, content={"error": f"Failed to generate system prompts: {str(e)}"})
 
 @app.post("/api/recordings/turn")
 async def save_turn_endpoint(request: Request):
@@ -686,6 +2052,7 @@ async def save_recording(request: Request):
 
 @app.post("/api/rerun_gpt5")
 @app.post("/api/rerun_gemini")
+@app.post("/api/rerun_model_b")
 async def rerun_gpt5_endpoint(request: Request):
     try:
         body = await request.json() if request.headers.get("content-type") == "application/json" else {}
@@ -693,15 +2060,17 @@ async def rerun_gpt5_endpoint(request: Request):
         key = body.get("openai_api_key") or body.get("gemini_api_key") or os.getenv("OPENAI_API_KEY")
         rec_title = body.get("recording_title")
         rec_num = body.get("recording_number")
+        target_model = body.get("target_model") or body.get("model") or "gpt-6-sol"
         from rerun_gpt5 import rerun_session_with_gpt5
         target_id = rerun_session_with_gpt5(
             source_session_id=source_id,
             recording_title=rec_title,
             recording_number=rec_num,
-            openai_api_key=key
+            openai_api_key=key,
+            target_model=target_model
         )
         if target_id:
-            return {"status": "ok", "message": "GPT-5.5 re-run completed and saved to PostgreSQL", "session_id": target_id}
+            return {"status": "ok", "message": f"{target_model} re-run completed and saved to PostgreSQL", "session_id": target_id, "model": target_model}
         return JSONResponse(status_code=400, content={"error": "Re-run failed. Check OPENAI_API_KEY or ensure turns exist in database or recordings directory."})
     except Exception as err:
         return JSONResponse(status_code=500, content={"error": str(err)})
@@ -718,18 +2087,54 @@ async def get_eval_comparison(session_id: str = None, recording_number: int = No
                 with conn.cursor() as cur:
                     cur.execute("SELECT session_id, model, recording_title, payload FROM eval_sessions WHERE session_id = %s;", (session_id,))
                     row = cur.fetchone()
+                    if not row:
+                        # Fallback: check if turns exist in eval_turns
+                        cur.execute("SELECT session_id, model, recording_title, payload FROM eval_turns WHERE session_id = %s LIMIT 1;", (session_id,))
+                        t_row = cur.fetchone()
+                        if t_row:
+                            row = t_row
+                            try:
+                                cur.execute("""
+                                    INSERT INTO eval_sessions (session_id, recording_title, recording_number, model, start_time, end_time, total_turns, payload)
+                                    VALUES (%s, %s, 1, %s, NOW(), NOW(), 1, %s)
+                                    ON CONFLICT (session_id) DO NOTHING;
+                                """, (t_row[0], t_row[2] or "RECORDING 1", t_row[1], Jsonb(t_row[3]) if isinstance(t_row[3], dict) else Jsonb({})))
+                                conn.commit()
+                            except Exception:
+                                pass
+
                     if row:
                         s_id, mod, title, pay = row
-                        if mod in ["gpt-5.5", "gemini-2.5-flash"] or "gpt-5.5" in (title or "").lower() or "gemini" in (title or "").lower():
+                        mod_str = (mod or "").lower()
+                        title_str = (title or "").lower()
+                        is_baseline = (
+                            mod_str in ["gpt-6-sol", "gpt-5.5", "gemini-2.5-flash"]
+                            or s_id.startswith("modelb_")
+                            or s_id.startswith("gpt5_")
+                            or "gpt-6-sol" in title_str
+                            or "gpt-5.5" in title_str
+                            or "gemini" in title_str
+                        )
+                        if is_baseline:
                             baseline_id = s_id
                             if pay and isinstance(pay, dict) and pay.get("source_session_id"):
                                 gpt_id = pay["source_session_id"]
+                            else:
+                                cur.execute("SELECT payload->>'source_session_id' FROM eval_turns WHERE session_id = %s AND payload->>'source_session_id' IS NOT NULL LIMIT 1;", (s_id,))
+                                s_res = cur.fetchone()
+                                if s_res and s_res[0]:
+                                    gpt_id = s_res[0]
                         else:
                             gpt_id = s_id
                             cur.execute("SELECT session_id FROM eval_sessions WHERE payload->>'source_session_id' = %s LIMIT 1;", (gpt_id,))
                             g_row = cur.fetchone()
                             if g_row:
                                 baseline_id = g_row[0]
+                            else:
+                                cur.execute("SELECT DISTINCT session_id FROM eval_turns WHERE payload->>'source_session_id' = %s OR (session_id LIKE 'modelb_%%') ORDER BY session_id DESC LIMIT 1;", (gpt_id,))
+                                g_turn_row = cur.fetchone()
+                                if g_turn_row:
+                                    baseline_id = g_turn_row[0]
 
         if not gpt_id or not baseline_id:
             target_gpt, target_baseline = find_paired_sessions(recording_number)
@@ -737,7 +2142,7 @@ async def get_eval_comparison(session_id: str = None, recording_number: int = No
             if target_baseline: baseline_id = target_baseline["session_id"]
 
         if not gpt_id or not baseline_id:
-            return JSONResponse(status_code=404, content={"error": "Could not find paired GPT-4o and GPT-5.5 sessions."})
+            return JSONResponse(status_code=404, content={"error": "Could not find paired GPT-4o and GPT-6-sol sessions."})
 
         summary = evaluate_sessions(gpt_id, baseline_id, use_judge=judge)
         return summary
@@ -849,6 +2254,7 @@ async def list_recordings():
                         "total_takes": r[6] or 0,
                         "total_tokens": r[7] or 0,
                         "total_latency_seconds": float(r[8] or 0),
+                        "total_cost": 0.0,
                         "created_at": r[9].isoformat() if r[9] else "",
                         "source_session_id": (r[10].get("source_session_id") if (len(r) > 10 and isinstance(r[10], dict)) else None),
                         "payload": r[10] if len(r) > 10 else {},
@@ -901,6 +2307,11 @@ async def list_recordings():
                         "completion_tokens": c_tok or 0,
                         "output_tokens": c_tok or 0,
                         "total_tokens": toks or ((p_tok or 0) + (c_tok or 0)),
+                        "cost": round(
+                            ((p_tok or 0) / 1_000_000.0) * MODEL_PRICING_CATALOG.get(model or "gpt-4o", {}).get("input_price", 2.50)
+                            + ((c_tok or 0) / 1_000_000.0) * MODEL_PRICING_CATALOG.get(model or "gpt-4o", {}).get("output_price", 10.00),
+                            6
+                        ),
                         "tool_calls": t_calls or [],
                         "payload": payload if isinstance(payload, dict) else {},
                         "model": model
@@ -909,6 +2320,7 @@ async def list_recordings():
                         recordings_map[s_id]["takes"].append(take_obj)
                         recordings_map[s_id]["total_takes"] = len(recordings_map[s_id]["takes"])
                         recordings_map[s_id]["total_tokens"] += (toks or 0)
+                        recordings_map[s_id]["total_cost"] = round(recordings_map[s_id].get("total_cost", 0.0) + take_obj["cost"], 6)
                         recordings_map[s_id]["total_latency_seconds"] = round(recordings_map[s_id]["total_latency_seconds"] + float(lat or 0), 3)
 
                 # Unpack legacy sessions payload["turns"] if takes was empty
@@ -1100,9 +2512,11 @@ async def list_recordings():
         model_name = s_obj.get("model", "")
         title_str = (s_obj.get("recording_title") or "").lower()
         is_baseline_sim = (
-            model_name in ["gpt-5.5", "gemini-2.5-flash"]
+            model_name in ["gpt-6-sol", "gpt-5.5", "gemini-2.5-flash"]
+            or s_id.startswith("modelb_")
             or s_id.startswith("gpt5_")
             or s_id.startswith("gemini_")
+            or "gpt-6-sol" in title_str
             or "gpt-5.5" in title_str
             or "gemini" in title_str
             or bool(s_obj.get("source_session_id"))
@@ -1143,13 +2557,13 @@ async def list_recordings():
             # Set baseline takes title to match parent
             b_takes = matched_baseline.get("takes", [])
             for bt in b_takes:
-                bt["recording_title"] = f"RECORDING {idx} (GPT-5.5)"
+                bt["recording_title"] = f"RECORDING {idx} (GPT-6-sol)"
                 bt["recording_number"] = idx
 
             baseline_obj = {
                 "session_id": matched_baseline["session_id"],
-                "model": "gpt-5.5",
-                "recording_title": f"RECORDING {idx} (GPT-5.5)",
+                "model": "gpt-6-sol",
+                "recording_title": f"RECORDING {idx} (GPT-6-sol)",
                 "recording_number": idx,
                 "total_takes": matched_baseline.get("total_takes", len(b_takes)),
                 "total_tokens": matched_baseline.get("total_tokens", 0),
@@ -1160,13 +2574,14 @@ async def list_recordings():
             }
             rec["gpt5_run"] = baseline_obj
             rec["gemini_run"] = baseline_obj # Backward-compatibility alias
-            rec["available_models"] = ["gpt-4o", "gpt-5.5"]
+            rec["available_models"] = ["gpt-4o", "gpt-6-sol"]
         else:
             rec["gpt5_run"] = None
             rec["gemini_run"] = None
             rec["available_models"] = ["gpt-4o"]
 
-    return {"recordings": primary_sessions}
+    total_spend = round(sum(r.get("total_cost", 0.0) for r in primary_sessions), 6)
+    return {"recordings": primary_sessions, "total_spend_usd": total_spend}
 
 @app.get("/api/recordings/{filename:path}")
 async def get_recording(filename: str):

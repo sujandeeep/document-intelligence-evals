@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MathRouter - Strict Calculator Agent</title>
+    <title>Document Intelligence & Evaluation</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css?v=20261105_layout2">
 </head>
@@ -13,7 +13,7 @@
         <div class="container">
         <div class="network-banner" id="networkBanner">Connection lost. Please check your internet.</div>
         <header>
-            <h2>✨ MathRouter</h2>
+            <h2>✨ Document Intelligence</h2>
             <div style="display: flex; gap: 8px; align-items: center;">
                 <div class="recording-indicator" id="recordingIndicator" style="display: none;">
                     <span class="pulsing-dot"></span>
@@ -30,24 +30,49 @@
             </div>
         </header>
 
-        <div class="settings-panel" id="settingsPanel">
-            <h3>Server Modules</h3>
-            <div class="toggle-row">
-                <span>Addition</span>
-                <label class="switch"><input type="checkbox" id="toggle_add" checked><span class="slider"></span></label>
+        <!-- Hidden File Input for PDF / TXT / MD Document Ingestion -->
+        <input type="file" id="chatbotDocFileInput" accept=".pdf,.txt,.md" style="display: none;">
+
+        <!-- Document Upload & Grounding Bar -->
+        <div class="doc-grounding-bar" id="docGroundingBar">
+            <div class="doc-bar-left">
+                <button class="doc-upload-btn" id="docUploadTriggerBtn" title="Upload Document (PDF, TXT, MD)">
+                    <span id="docUploadIcon">📄</span>
+                    <span id="docUploadLabel">Upload Document</span>
+                </button>
+                
+                <div class="doc-active-pill" id="docActivePill" style="display: none;">
+                    <span class="doc-file-icon">📄</span>
+                    <span class="doc-file-name" id="docFileName">filename.pdf</span>
+                    <span class="doc-meta-badge" id="docMetaBadge">~0 words</span>
+                    <button class="doc-preview-btn" id="docPreviewBtn" title="Preview Extracted Text">👁️</button>
+                    <button class="doc-remove-btn" id="docRemoveBtn" title="Remove Document">✕</button>
+                </div>
             </div>
-            <div class="toggle-row">
-                <span>Subtraction</span>
-                <label class="switch"><input type="checkbox" id="toggle_sub" checked><span class="slider"></span></label>
+
+            <div class="doc-bar-right">
+                <label for="promptModeSelect" class="prompt-mode-label">Mode:</label>
+                <select id="promptModeSelect" class="prompt-mode-select" title="5 Fixated Prompt Modes">
+                    <option value="executive_summary" selected>1. Executive Summary</option>
+                    <option value="fact_checker">2. Fact-Checking & Evidence</option>
+                    <option value="critical_auditor">3. Critical & Risk Auditor</option>
+                    <option value="action_extractor">4. Action Items & Tables</option>
+                    <option value="comprehensive_qa">5. Comprehensive Q&A</option>
+                </select>
+                <button class="prompt-drawer-btn" id="promptDrawerBtn" title="View Active Prompt Instructions">ℹ️</button>
             </div>
-            <div class="toggle-row">
-                <span>Multiplication</span>
-                <label class="switch"><input type="checkbox" id="toggle_mul" checked><span class="slider"></span></label>
+        </div>
+
+        <!-- Collapsible Prompt Description Drawer -->
+        <div class="prompt-info-drawer" id="promptInfoDrawer" style="display: none;">
+            <div class="prompt-info-header">
+                <span id="promptInfoTitle" style="font-weight: 600; font-size: 13px;">Executive Summary & Synthesis</span>
+                <button id="closePromptInfoBtn" style="background:none; border:none; color:var(--text-muted); cursor:pointer;">✕</button>
             </div>
-            <div class="toggle-row">
-                <span>Division</span>
-                <label class="switch"><input type="checkbox" id="toggle_div" checked><span class="slider"></span></label>
+            <div class="prompt-info-desc" id="promptInfoDesc" style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+                Concise, strategic takeaways, high-level synthesis and executive framing.
             </div>
+            <div class="prompt-info-instruction" id="promptInfoInstruction" style="font-size: 11px; margin-top: 6px; font-family: monospace; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; color: var(--text-color); max-height: 120px; overflow-y: auto;"></div>
         </div>
 
         <div class="chat-box" id="chatBox">
@@ -55,10 +80,26 @@
         </div>
 
         <div class="input-area">
-            <input type="text" id="userInput" placeholder="Ask a math question..." autocomplete="off">
+            <input type="text" id="userInput" placeholder="Upload a document above or ask any question..." autocomplete="off">
             <button id="sendBtn">Send</button>
         </div>
     </div> <!-- End container -->
+
+    <!-- Document Preview Modal -->
+    <div class="modal-backdrop" id="docPreviewModal" style="display: none;">
+        <div class="recordings-modal" style="max-width: 750px; max-height: 80vh;">
+            <div class="modal-top">
+                <div class="modal-title-group">
+                    <h3 id="previewDocModalTitle">📄 Document Text</h3>
+                    <span class="modal-sub" id="previewDocModalSub">Full extracted content used for model context grounding</span>
+                </div>
+                <button class="close-modal-btn" id="closeDocPreviewModalBtn">&times;</button>
+            </div>
+            <div style="padding: 16px; overflow-y: auto; flex: 1;">
+                <pre id="docPreviewTextContent" style="white-space: pre-wrap; font-family: monospace; font-size: 12px; color: var(--text-color); line-height: 1.5;"></pre>
+            </div>
+        </div>
+    </div>
 
     <div class="system-logs-panel" id="systemLogsPanel">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">

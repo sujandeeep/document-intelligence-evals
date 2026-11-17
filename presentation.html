@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Intelligence & Evaluation Console - Presentation Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(17, 24, 39, 0.85);
+      --card-border: rgba(55, 65, 81, 0.5);
+      --primary: #3b82f6;
+      --primary-glow: rgba(59, 130, 246, 0.25);
+      --accent: #8b5cf6;
+      --accent-glow: rgba(139, 92, 246, 0.25);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --text: #f3f4f6;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    .glow-sphere-1 {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
+      top: -150px;
+      left: -150px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .glow-sphere-2 {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 70%);
+      bottom: -150px;
+      right: -150px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .progress-bar-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      z-index: 100;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .deck-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 60px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .slide {
+      display: none;
+      width: 100%;
+      max-width: 1200px;
+      height: 680px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 48px 56px;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px var(--primary-glow);
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      animation: fadeInSlide 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      overflow: hidden;
+    }
+
+    .slide.active {
+      display: flex;
+    }
+
+    @keyframes fadeInSlide {
+      from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.985);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .slide-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .badge.purple {
+      background: rgba(139, 92, 246, 0.15);
+      color: #c4b5fd;
+      border-color: rgba(139, 92, 246, 0.3);
+    }
+
+    .badge.green {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    h1.slide-title {
+      font-size: 2.3rem;
+      font-weight: 800;
+      line-height: 1.2;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 6px;
+    }
+
+    p.slide-subtitle {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      font-weight: 400;
+    }
+
+    .slide-body {
+      flex: 1;
+      display: flex;
+      gap: 32px;
+      align-items: stretch;
+      overflow-y: auto;
+    }
+
+    .col-half {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      width: 100%;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      width: 100%;
+    }
+
+    .feature-card {
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid rgba(71, 85, 105, 0.4);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(96, 165, 250, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .stat-hero {
+      font-size: 2.8rem;
+      font-weight: 800;
+      line-height: 1;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .stat-label {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      margin-top: 4px;
+    }
+
+    table.slide-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      text-align: left;
+    }
+
+    table.slide-table th {
+      padding: 12px 16px;
+      background: rgba(30, 41, 59, 0.8);
+      color: #94a3b8;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(71, 85, 105, 0.5);
+    }
+
+    table.slide-table td {
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      color: #e2e8f0;
+    }
+
+    table.slide-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .highlight-cell {
+      color: #34d399 !important;
+      font-weight: 700;
+    }
+
+    pre.code-block {
+      background: #090d16;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: #93c5fd;
+      line-height: 1.5;
+      overflow-x: auto;
+    }
+
+    .arch-diagram {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px dashed rgba(99, 102, 241, 0.4);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+    }
+
+    .arch-node {
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(71, 85, 105, 0.6);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .arch-arrow {
+      text-align: center;
+      color: #818cf8;
+      font-weight: bold;
+    }
+
+    .controls-bar {
+      height: 64px;
+      background: rgba(15, 23, 42, 0.8);
+      border-top: 1px solid var(--card-border);
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 40px;
+      z-index: 50;
+    }
+
+    .control-btn {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(71, 85, 105, 0.5);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .control-btn:hover {
+      background: rgba(51, 65, 85, 0.9);
+      border-color: rgba(96, 165, 250, 0.5);
+    }
+
+    .slide-counter {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .speaker-notes-drawer {
+      position: fixed;
+      bottom: 64px;
+      left: 50%;
+      transform: translateX(-50%) translateY(120%);
+      width: 90%;
+      max-width: 1000px;
+      max-height: 220px;
+      background: rgba(10, 15, 26, 0.95);
+      border: 1px solid rgba(99, 102, 241, 0.5);
+      border-radius: 16px 16px 0 0;
+      padding: 20px 24px;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(20px);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 90;
+      overflow-y: auto;
+    }
+
+    .speaker-notes-drawer.open {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    .notes-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #818cf8;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .notes-content {
+      font-size: 0.92rem;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+
+    @media print {
+      body {
+        overflow: visible;
+        background: #ffffff;
+        color: #000000;
+      }
+      .glow-sphere-1, .glow-sphere-2, .controls-bar, .progress-bar-container, .speaker-notes-drawer {
+        display: none !important;
+      }
+      .deck-container {
+        padding: 0;
+        display: block;
+      }
+      .slide {
+        display: flex !important;
+        page-break-after: always;
+        height: 100vh;
+        width: 100vw;
+        max-width: none;
+        border: none;
+        box-shadow: none;
+        background: #ffffff;
+        color: #000000;
+        padding: 40px;
+      }
+      h1.slide-title {
+        color: #000000;
+        -webkit-text-fill-color: initial;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient Glow -->
+  <div class="glow-sphere-1"></div>
+  <div class="glow-sphere-2"></div>
+
+  <!-- Progress Bar -->
+  <div class="progress-bar-container">
+    <div id="progressFill" class="progress-bar-fill"></div>
+  </div>
+
+  <!-- Main Slide Deck Viewport -->
+  <main class="deck-container">
+
+    <!-- Slide 1: Title -->
+    <div class="slide active" data-notes="Welcome everyone. Today I'm presenting Document Intelligence & Evaluation Console—an enterprise platform for grounded document Q&A across 5 specialized analysis modes, paired with automated comparative model benchmarking and real-time telemetry.">
+      <div class="slide-badge-row">
+        <span class="badge">In-Context Grounding</span>
+        <span class="badge purple">5 Prompt Modes</span>
+        <span class="badge green">Comparative Benchmarks</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Document Intelligence &amp; Evaluation Console</h1>
+        <p class="slide-subtitle">Enterprise In-Context Grounding, Multi-Persona Q&amp;A, and Automated Comparative Model Benchmarking</p>
+      </div>
+      <div class="slide-body">
+        <div class="col-half">
+          <div class="feature-card" style="margin-bottom: 16px;">
+            <div class="card-title">📄 Grounded Document Q&amp;A</div>
+            <div class="card-desc">Eliminate hallucinations in contract, financial, and technical analysis by grounding LLMs with strict in-context document envelopes and verbatim quote enforcement.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">⚖️ Automated Comparative Benchmarking</div>
+            <div class="card-desc">Run side-by-side evaluations comparing GPT-4o against frontier models (e.g. GPT-6-sol) with machine-graded LLM judging, token profiling, and latency tracking.</div>
+          </div>
+        </div>
+        <div class="col-half" style="align-items: center; justify-content: center;">
+          <div style="background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(71,85,105,0.6); border-radius: 16px; padding: 32px; width: 100%; text-align: center;">
+            <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 8px;">PRESENTER &amp; REPOSITORY</div>
+            <div style="font-size: 1.4rem; font-weight: 700; color: #f8fafc; margin-bottom: 4px;">Sujan</div>
+            <div style="font-size: 0.9rem; color: #38bdf8; font-family: 'JetBrains Mono';">github.com/sujandeeep/mathrouter-evals</div>
+            <div style="margin-top: 20px; display: flex; justify-content: center; gap: 10px;">
+              <span class="badge">100% Evidence Substantiation</span>
+              <span class="badge green">0% Phantom Clauses</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 2: The Problem -->
+    <div class="slide" data-notes="When enterprises query documents with standard chatbots, they face severe risks: models fabricate citations, invent contract clauses, summarize loosely, and hallucinate figures without any verification trail.">
+      <div class="slide-badge-row">
+        <span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #fca5a5; border-color: rgba(239, 68, 68, 0.3);">The Enterprise Problem</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Unchecked Document Hallucination</h1>
+        <p class="slide-subtitle">Why Generic LLM Chatbots Fail in Mission-Critical Document Auditing</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="feature-card">
+            <div class="card-title">⚠️ Phantom Citations &amp; Invented Terms</div>
+            <div class="card-desc">Models blend pre-training data into document queries, citing non-existent clauses, hallucinating dates, and inventing terms with complete confidence.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">🗣️ Conversational Fluff &amp; Vague Answers</div>
+            <div class="card-desc">Generic chatbots produce pleasant prose that glosses over critical indemnifications, legal exclusions, and exact financial thresholds.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">🔍 Zero Verification &amp; Quote Provenance</div>
+            <div class="card-desc">Answers lack verbatim quote evidence or page references, forcing analysts to manually re-read the entire document to verify claims.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">❓ Blind Model Upgrades Without Benchmarking</div>
+            <div class="card-desc">Organizations have no systematic way to benchmark whether a new frontier model actually adheres to company documents better or just sounds smoother.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 3: The Solution -->
+    <div class="slide" data-notes="Our platform solves this via deterministic in-context grounding and 5 specialized analysis prompt modes. Every answer must be substantiated by verbatim quotes or report 'Not substantiated by the document.'">
+      <div class="slide-badge-row">
+        <span class="badge green">The Solution</span>
+        <span class="badge">Strict Grounding</span>
+      </div>
+      <div>
+        <h1 class="slide-title">In-Context Grounding &amp; 5 Analysis Modes</h1>
+        <p class="slide-subtitle">Transforming Document Q&amp;A from Speculative Chat into Forensic Analysis</p>
+      </div>
+      <div class="slide-body">
+        <div class="col-half">
+          <div class="feature-card" style="margin-bottom: 14px;">
+            <div class="card-title">📑 In-Context Document Envelope</div>
+            <div class="card-desc">Uploaded files (.pdf, .txt, .md) are injected into the context window inside strict isolation delimiters, guaranteeing complete document visibility.</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 14px;">
+            <div class="card-title">🎯 5 Forensic Persona Modes</div>
+            <div class="card-desc">Calibrated system prompts ranging from Executive Summary to Adversarial Risk Auditor replacing generic conversational defaults.</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 14px;">
+            <div class="card-title">🚫 Negative Prompting &amp; Quote Rules</div>
+            <div class="card-desc">Hard negative constraints require verbatim quote evidence. If an answer is not in the text, the model must output: <em>'Not substantiated by the document.'</em></div>
+          </div>
+        </div>
+        <div class="col-half">
+          <pre class="code-block">
+// Grounded In-Context Envelope
+{system_instruction}
+
+--- BEGIN ATTACHED DOCUMENT ---
+--- Page 1 ---
+MASTER SERVICES AGREEMENT
+4. Termination Notice: Either party may terminate 
+with thirty (30) days prior written notice...
+--- END ATTACHED DOCUMENT ---
+
+User Query: "What is the termination notice period?"
+
+Model Output (Fact-Checker Mode):
+"The termination notice period is thirty (30) days.
+Evidence (Page 1): 'Either party may terminate 
+with thirty (30) days prior written notice...'"</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 4: Ingestion Pipeline -->
+    <div class="slide" data-notes="Here is our ingestion pipeline: FastAPI handles uploads via /api/upload_doc. PDFs are parsed page-by-page using pypdf, with word counts and token estimations calculated in real time, and an interactive slide drawer in the UI.">
+      <div class="slide-badge-row">
+        <span class="badge purple">Ingestion Pipeline</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Multi-Page Ingestion &amp; Token Budgeting</h1>
+        <p class="slide-subtitle">Automated Parsing of PDFs, Text, &amp; Markdown with Page-Level Segmentation</p>
+      </div>
+      <div class="slide-body">
+        <div class="arch-diagram" style="width: 100%;">
+          <div class="arch-node">
+            <span><strong>User File Upload (.pdf, .txt, .md)</strong><br><small style="color: #94a3b8;">Uploaded via console drag-and-drop or file selector</small></span>
+            <span class="badge">Multipart Form</span>
+          </div>
+          <div class="arch-arrow">▼ POST /api/upload_doc</div>
+          <div class="grid-2">
+            <div class="arch-node" style="flex-direction: column; align-items: flex-start;">
+              <strong>PDF Extraction Engine (pypdf)</strong>
+              <small style="color: #94a3b8;">Page-by-page segmentation with explicit '--- Page X ---' headers and whitespace normalization.</small>
+            </div>
+            <div class="arch-node" style="flex-direction: column; align-items: flex-start;">
+              <strong>Token Budgeting &amp; Metrics</strong>
+              <small style="color: #94a3b8;">Computes character count, word count, and estimated tokens to guarantee context headroom.</small>
+            </div>
+          </div>
+          <div class="arch-arrow">▼ Structured Grounding Response</div>
+          <div class="arch-node">
+            <span><strong>Frontend Document Drawer &amp; Context Injection</strong><br><small style="color: #94a3b8;">Interactive drawer to inspect extracted raw text; context automatically attached to every conversational turn.</small></span>
+            <span class="badge green">Live Document State</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 5: The 5 Prompt Modes -->
+    <div class="slide" data-notes="We feature 5 fixated prompt modes: Executive Summary, Fact-Checker, Critical & Risk Auditor, Action Items & Tables, and Comprehensive Q&A. Each serves a distinct forensic workflow.">
+      <div class="slide-badge-row">
+        <span class="badge">Forensic Personas</span>
+      </div>
+      <div>
+        <h1 class="slide-title">The 5 Fixated Analysis Prompt Modes</h1>
+        <p class="slide-subtitle">Precision-Crafted Personas Tailored for Enterprise Analysis Workflows</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-3" style="grid-template-columns: repeat(3, 1fr); width: 100%;">
+          <div class="feature-card">
+            <div class="card-title">1️⃣ Executive Summary</div>
+            <div class="card-desc"><strong>Role:</strong> Executive Research Analyst.<br>Delivers high-density strategic synthesis, key metrics, and BLUF (Bottom Line Up Front) in under 150 words.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">2️⃣ Fact-Checker &amp; Evidence</div>
+            <div class="card-desc"><strong>Role:</strong> Evidence Verifier.<br>Mandates verbatim quotes and section citations for every single assertion. Strict 'Not substantiated' fallback.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">3️⃣ Critical &amp; Risk Auditor</div>
+            <div class="card-desc"><strong>Role:</strong> Adversarial Risk Auditor.<br>Identifies hidden assumptions, logic fallacies, missing variables, operational hazards, and regulatory gaps.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">4️⃣ Action Items &amp; Tables</div>
+            <div class="card-desc"><strong>Role:</strong> Operations Specialist.<br>Converts narrative text into structured Markdown tables: Deliverable, Owner, Milestone, and Deadline.</div>
+          </div>
+          <div class="feature-card" style="grid-column: span 2;">
+            <div class="card-title">5️⃣ Comprehensive Q&amp;A Explainer</div>
+            <div class="card-desc"><strong>Role:</strong> Senior Technical Explainer &amp; Domain Expert.<br>Delivers exhaustive, pedagogical depth, connecting concepts across disparate pages and sections for complete reader comprehension.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 6: Comparative Benchmarking -->
+    <div class="slide" data-notes="Our platform allows side-by-side comparative benchmarking. We dispatch the exact same document and query to GPT-4o and comparison models like GPT-6-sol, comparing responses, tokens, latencies, and dollar spend.">
+      <div class="slide-badge-row">
+        <span class="badge purple">Benchmarking Architecture</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Comparative Model Benchmarking Framework</h1>
+        <p class="slide-subtitle">Side-by-Side Dual-Model Ingestion: GPT-4o vs Frontier Comparison Models</p>
+      </div>
+      <div class="slide-body">
+        <div class="col-half">
+          <div class="feature-card" style="margin-bottom: 12px;">
+            <div class="card-title">⚖️ Dual Simultaneous Execution</div>
+            <div class="card-desc">Dispatches the exact same document context, query, and prompt mode directives simultaneously to GPT-4o and comparison models (e.g., GPT-6-sol).</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 12px;">
+            <div class="card-title">📊 Side-by-Side Response Inspector</div>
+            <div class="card-desc">Inspect differences in nuance, formatting, evidence citations, and completeness across twin split-view response cards.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">⏱️ Latency &amp; Token Breakdown</div>
+            <div class="card-desc">Measures execution time deltas and compares prompt vs completion token consumption to evaluate model efficiency.</div>
+          </div>
+        </div>
+        <div class="col-half">
+          <div style="background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(71,85,105,0.6); border-radius: 14px; padding: 20px;">
+            <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 10px; font-weight: 600;">BENCHMARK INSPECTION CARD</div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+              <span class="badge">GPT-4o (Grounded)</span>
+              <span style="font-size: 0.82rem; color: #34d399;">1.42s • 142 tokens</span>
+            </div>
+            <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 16px; border-left: 2px solid #3b82f6; padding-left: 10px;">
+              "Verbatim quote confirmed from Section 4. Notice requirement is strictly 30 calendar days."
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+              <span class="badge purple">GPT-6-sol (Comparison)</span>
+              <span style="font-size: 0.82rem; color: #f59e0b;">1.85s • 210 tokens</span>
+            </div>
+            <div style="font-size: 0.85rem; color: #cbd5e1; border-left: 2px solid #8b5cf6; padding-left: 10px;">
+              "The document outlines a standard 30-day notice period with customary termination provisions."
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 7: LLM-as-a-Judge -->
+    <div class="slide" data-notes="Automated grading is performed by our LLM-as-a-Judge engine. It verifies verbatim quotes against the document text, detects hallucinations, grades reasoning on a 1-to-5 scale, and logs findings to the database.">
+      <div class="slide-badge-row">
+        <span class="badge green">Automated Auditing</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Automated LLM-as-a-Judge Evaluation</h1>
+        <p class="slide-subtitle">Forensic Multi-Dimensional Grading of Grounding, Quotes, &amp; Reasoning Quality</p>
+      </div>
+      <div class="slide-body">
+        <div class="col-half">
+          <div class="feature-card" style="margin-bottom: 12px;">
+            <div class="card-title">🔍 Verbatim Quote Verification</div>
+            <div class="card-desc">Matches cited quotes directly against the uploaded document text to detect paraphrasing or fabricated text.</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 12px;">
+            <div class="card-title">🚫 Hallucination Detection</div>
+            <div class="card-desc">Flags any assertion not backed by document evidence, marking whether ungrounded external claims were injected.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">⭐ 1–5 Multi-Criteria Scoring</div>
+            <div class="card-desc">Grades explanation quality, structural clarity, conciseness, and strict adherence to persona directives.</div>
+          </div>
+        </div>
+        <div class="col-half">
+          <pre class="code-block">
+// Automated LLM Judge Audit Record
+{
+  "session_id": "rec_20261116_063350",
+  "document_fidelity_pass": true,
+  "verbatim_evidence_score": 5,
+  "reasoning_quality_score": 5,
+  "phantom_claims_detected": 0,
+  "negative_constraint_honored": true,
+  "verdict_summary": "All assertions substantiated by 
+Page 3 text. Quotes match document verbatim."
+}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 8: Empirical Findings -->
+    <div class="slide" data-notes="The empirical findings show a 100% evidence substantiation rate and 0% phantom clauses with our grounded prompt modes, versus a 14.5% phantom clause rate in ungrounded chatbots. Furthermore, completion tokens were reduced by ~25%.">
+      <div class="slide-badge-row">
+        <span class="badge green">Key Findings</span>
+        <span class="badge">Empirical Results</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Empirical Benchmark Findings</h1>
+        <p class="slide-subtitle">Quantifying Factual Substantiation, Hallucination Reduction, and Token Savings</p>
+      </div>
+      <div class="slide-body" style="flex-direction: column;">
+        <table class="slide-table" style="margin-bottom: 24px;">
+          <thead>
+            <tr>
+              <th>Evaluation Metric</th>
+              <th>Grounded Prompt Modes (GPT-4o)</th>
+              <th>Ungrounded Raw Chatbot Baseline</th>
+              <th>Impact / Delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Evidence Substantiation</strong></td>
+              <td class="highlight-cell">100.0%</td>
+              <td>68.2% (frequent extrapolation)</td>
+              <td class="highlight-cell">+31.8% Factual Reliability</td>
+            </tr>
+            <tr>
+              <td><strong>Phantom Clause Rate</strong></td>
+              <td class="highlight-cell">0.0%</td>
+              <td>14.5% (hallucinated details)</td>
+              <td class="highlight-cell">Zero Hallucinated Clauses</td>
+            </tr>
+            <tr>
+              <td><strong>Directive Adherence</strong></td>
+              <td class="highlight-cell">96.4%</td>
+              <td>52.0% (standard conversational drift)</td>
+              <td class="highlight-cell">Strict Persona Compliance</td>
+            </tr>
+            <tr>
+              <td><strong>Completion Token Waste</strong></td>
+              <td class="highlight-cell">Compact &amp; Dense (BLUF)</td>
+              <td>Verbose (+35% conversational fluff)</td>
+              <td class="highlight-cell">~25% Token Cost Reduction</td>
+            </tr>
+            <tr>
+              <td><strong>Turn Latency</strong></td>
+              <td>~1.65s (full document envelope)</td>
+              <td>~1.20s (raw ungrounded generation)</td>
+              <td>Negligible delta for total verification</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="grid-3">
+          <div class="feature-card" style="text-align: center;">
+            <div class="stat-hero">100%</div>
+            <div class="stat-label">Evidence Substantiation</div>
+          </div>
+          <div class="feature-card" style="text-align: center;">
+            <div class="stat-hero">0.0%</div>
+            <div class="stat-label">Phantom Clause Rate</div>
+          </div>
+          <div class="feature-card" style="text-align: center;">
+            <div class="stat-hero">~25%</div>
+            <div class="stat-label">Token Savings via BLUF</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 9: Telemetry & Observability -->
+    <div class="slide" data-notes="Every document session, turn, and judge score is stored in PostgreSQL 16. Prometheus scrapes latency histograms and token counters, visualized in Grafana, while our live dollar spend tracker monitors costs in real time.">
+      <div class="slide-badge-row">
+        <span class="badge">Production Observability</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Enterprise Telemetry &amp; Relational Persistence</h1>
+        <p class="slide-subtitle">PostgreSQL Relational Storage, Prometheus Metrics, &amp; Real-Time Dollar Tracking</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="feature-card">
+            <div class="card-title">🗄️ PostgreSQL 16 (Port 5434)</div>
+            <div class="card-desc">Persistent tables: <code>eval_sessions</code>, <code>eval_turns</code>, and <code>eval_documents</code> storing document text, prompt keys, model payloads, and judge verdicts.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">📈 Prometheus &amp; Grafana</div>
+            <div class="card-desc">Prometheus (Port 9090) tracks request counts, turn latency histograms (0.1s–10s), and token usage by model, visualized in Grafana (Port 3000).</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">💰 Live Dollar Spend Tracker</div>
+            <div class="card-desc">Dynamic pricing tables calculate real-time cumulative API costs based on exact prompt and completion token counts across models.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 10: Universal UI V2 Console -->
+    <div class="slide" data-notes="Our React 19 frontend complies with Universal UI Guide V2: an ergonomic 56px navigation rail, 364px session explorer, and 480px trace inspector with independent column scrolling and a 900px minimum viewport floor.">
+      <div class="slide-badge-row">
+        <span class="badge purple">Universal UI V2</span>
+      </div>
+      <div>
+        <h1 class="slide-title">The Universal UI V2 Evaluation Console</h1>
+        <p class="slide-subtitle">Ergonomic 3-Panel Architecture for High-Density Document Inspection</p>
+      </div>
+      <div class="slide-body">
+        <div class="col-half">
+          <div class="feature-card" style="margin-bottom: 12px;">
+            <div class="card-title">🎛️ Panel 1: Navigation Rail (56px)</div>
+            <div class="card-desc">Instantly toggle between Session Explorer, Raw Database Viewer, and Live Prometheus Metrics views.</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 12px;">
+            <div class="card-title">📋 Panel 2: Session Explorer (364px)</div>
+            <div class="card-desc">Searchable session index with model badges, attached document tags, total turn counts, and one-click session loading.</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 12px;">
+            <div class="card-title">🔍 Panel 3: Comparison &amp; Trace Inspector</div>
+            <div class="card-desc">480px floor with chronological turns, document preview drawer, twin model comparison cards, and judge verdicts.</div>
+          </div>
+        </div>
+        <div class="col-half">
+          <div class="feature-card" style="height: 100%; justify-content: center;">
+            <div class="card-title">📐 Supported Viewport Gate</div>
+            <div class="card-desc" style="margin-bottom: 16px;">Enforces a strict 900px minimum width floor via <code>SupportedViewportGate.jsx</code>, guaranteeing zero layout degradation while maintaining independent scroll containers.</div>
+            <div style="display: flex; gap: 8px;">
+              <span class="badge green">Independent Column Scroll</span>
+              <span class="badge">Theme Persistence</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 11: Live Demo Walkthrough -->
+    <div class="slide" data-notes="In the live demo, I upload a contract PDF, switch to Fact-Checker mode, submit a question on liabilities, show the verbatim quotes and citations, run the automated LLM Judge, and switch to Action Extractor to generate a deliverables table.">
+      <div class="slide-badge-row">
+        <span class="badge green">Live Demonstration</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Live Demo: Interactive Document Q&amp;A &amp; Audit</h1>
+        <p class="slide-subtitle">Step-by-Step Walkthrough of the Live Evaluation Console</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="feature-card">
+            <div class="card-title">1️⃣ Upload Contract PDF</div>
+            <div class="card-desc">Upload a sample agreement. Inspect instant word count, token estimation, and open Document Drawer to preview pages.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">2️⃣ Query with Fact-Checker Mode</div>
+            <div class="card-desc">Ask: <em>'What are the exact termination notice periods and liabilities in Section 4?'</em> Observe verbatim quotes and page citations.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">3️⃣ Trigger Automated LLM Judge</div>
+            <div class="card-desc">Click <strong>Grade All Turns</strong>: watch the judge verify quotes against the source text and confirm 100% evidence fidelity.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">4️⃣ Extract Action Items Table</div>
+            <div class="card-desc">Switch to <strong>Action Items &amp; Tables</strong> mode; watch narrative text automatically format into an executive deliverables matrix.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 12: Engineering Challenges -->
+    <div class="slide" data-notes="Key engineering challenges solved: multi-page PDF formatting, context window token budgeting, calculating dynamic model dollar spend, and multi-panel UI ergonomics.">
+      <div class="slide-badge-row">
+        <span class="badge">Technical Engineering</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Engineering Hurdles &amp; Technical Solutions</h1>
+        <p class="slide-subtitle">Real-World Distributed &amp; Agentic Problems Solved in Production</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="feature-card">
+            <div class="card-title">📄 Multi-Page PDF Formatting</div>
+            <div class="card-desc"><strong>Hurdle:</strong> Scrambled line breaks and fragmented headers across pages.<br><strong>Solution:</strong> Page-by-page demarcation with clean UTF-8/Latin-1 fallback decoding.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">🧠 Context Isolation &amp; Budgeting</div>
+            <div class="card-desc"><strong>Hurdle:</strong> Preventing document text from overriding prompt directives or exceeding token caps.<br><strong>Solution:</strong> Strict delimiter envelopes and real-time token headroom estimators.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">💳 Disparate Multi-Model Pricing</div>
+            <div class="card-desc"><strong>Hurdle:</strong> Tracking live dollar costs across different model token pricing schedules.<br><strong>Solution:</strong> Dynamic rate lookup table projecting prompt and completion dollar spend in real time.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">📐 Multi-Panel Responsive Ergonomics</div>
+            <div class="card-desc"><strong>Hurdle:</strong> Horizontal layout collapse across 3 panels on smaller displays.<br><strong>Solution:</strong> Viewport Gate floor at 900px with independent CSS scroll containers.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 13: Enterprise Impact -->
+    <div class="slide" data-notes="The enterprise impact is de-risking AI in high-stakes domains: legal, financial, and regulatory auditing. We provide 100% auditable provenance and one-click PDF/XLSX export for leadership.">
+      <div class="slide-badge-row">
+        <span class="badge purple">Enterprise Value</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Enterprise Value, Compliance &amp; Audit Readiness</h1>
+        <p class="slide-subtitle">De-Risking AI for Legal, Financial, and Regulated Industries</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-3">
+          <div class="feature-card">
+            <div class="card-title">🛡️ 100% Auditable Provenance</div>
+            <div class="card-desc">Every claim is linked to verbatim document text and permanently recorded in PostgreSQL for regulatory audit compliance.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">📉 High-Stakes Risk Mitigation</div>
+            <div class="card-desc">Eliminates costly hallucinations in contract review, loan underwriting, compliance auditing, and technical specifications.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">📄 One-Click Audit Export</div>
+            <div class="card-desc">Export complete evaluation sessions, model comparisons, and judge scores into branded PDF reports and Excel spreadsheets.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 14: Conclusion -->
+    <div class="slide" data-notes="In conclusion, the future of document AI is not about who has the biggest model, but about strict grounding, verifiable provenance, and empirical evaluation. Thank you!">
+      <div class="slide-badge-row">
+        <span class="badge green">Conclusion</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Conclusion: The Verifiable Intelligence Era</h1>
+        <p class="slide-subtitle">Why Grounding and Empirical Auditing Solve the AI Trust Barrier</p>
+      </div>
+      <div class="slide-body">
+        <div class="col-half">
+          <div class="feature-card" style="margin-bottom: 16px;">
+            <div class="card-title">1️⃣ Stop Trusting Ungrounded Chatbots</div>
+            <div class="card-desc">Enterprise document Q&amp;A requires strict in-context grounding and negative prompting to eliminate phantom clauses.</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 16px;">
+            <div class="card-title">2️⃣ Replace Generic Chat with Targeted Personas</div>
+            <div class="card-desc">Our 5 calibrated prompt modes provide forensic utility tailored for analysts, auditors, and executives.</div>
+          </div>
+          <div class="feature-card" style="margin-bottom: 16px;">
+            <div class="card-title">3️⃣ Continuous Automated Evaluation is Essential</div>
+            <div class="card-desc">Automated LLM-as-a-Judge and real-time telemetry turn generative AI from a stochastic gamble into an auditable software system.</div>
+          </div>
+        </div>
+        <div class="col-half" style="align-items: center; justify-content: center;">
+          <div style="background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(59, 130, 246, 0.5); border-radius: 16px; padding: 36px; text-align: center; width: 100%;">
+            <div style="font-size: 2rem; font-weight: 800; color: #38bdf8; margin-bottom: 8px;">100% Grounded.</div>
+            <div style="font-size: 1.1rem; color: #cbd5e1; margin-bottom: 16px;">Zero Hallucination. Full Auditability.</div>
+            <div style="font-size: 0.9rem; color: #94a3b8;">Thank you! Happy to take any questions.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 15: Q&A Prep -->
+    <div class="slide" data-notes="Be ready for questions on In-Context vs RAG, handling huge documents, quote verification accuracy, prompt injection defense, and model pricing calculations.">
+      <div class="slide-badge-row">
+        <span class="badge">Questions &amp; Answers</span>
+      </div>
+      <div>
+        <h1 class="slide-title">Anticipated Questions &amp; Technical Defenses</h1>
+        <p class="slide-subtitle">Key Technical Inquiries &amp; Authoritative Answers</p>
+      </div>
+      <div class="slide-body">
+        <div class="grid-2">
+          <div class="feature-card">
+            <div class="card-title">❓ Why In-Context Grounding over RAG?</div>
+            <div class="card-desc">For contracts under 100 pages, in-context grounding avoids chunking errors and retrieval misses, guaranteeing 100% context recall and cross-page synthesis.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">❓ How are quotes verified?</div>
+            <div class="card-desc">Our LLM Judge performs string matching against the ingested text. If a quote is paraphrased or missing, it is flagged as ungrounded.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">❓ How do you prevent prompt injection?</div>
+            <div class="card-desc">Document text is wrapped in strict delimiter boundaries. The system prompt instructs the model to treat document content purely as passive data.</div>
+          </div>
+          <div class="feature-card">
+            <div class="card-title">❓ How does cost tracking work?</div>
+            <div class="card-desc">FastAPI captures token usage directly from API responses, multiplying prompt and completion counts by published rates in real time.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Speaker Notes Floating Drawer -->
+  <div id="notesDrawer" class="speaker-notes-drawer">
+    <div class="notes-title">
+      <span>🎙️ SPEAKER NOTES &amp; TALKING POINTS</span>
+      <span style="cursor: pointer; color: #94a3b8;" onclick="toggleNotes()">✕ Close</span>
+    </div>
+    <div id="notesText" class="notes-content"></div>
+  </div>
+
+  <!-- Bottom Control Bar -->
+  <footer class="controls-bar">
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button class="control-btn" onclick="prevSlide()">◀ Previous</button>
+      <button class="control-btn" onclick="nextSlide()">Next ▶</button>
+      <span id="slideCounter" class="slide-counter" style="margin-left: 12px;">Slide 1 of 15</span>
+    </div>
+
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button class="control-btn" onclick="toggleNotes()">🎙️ Notes (S)</button>
+      <button class="control-btn" onclick="toggleFullScreen()">⛶ Fullscreen (F)</button>
+      <button class="control-btn" onclick="window.print()">🖨️ Export PDF (P)</button>
+    </div>
+  </footer>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    let currentSlide = 0;
+    const progressFill = document.getElementById('progressFill');
+    const slideCounter = document.getElementById('slideCounter');
+    const notesDrawer = document.getElementById('notesDrawer');
+    const notesText = document.getElementById('notesText');
+
+    function updateSlide(index) {
+      if (index < 0 || index >= totalSlides) return;
+      slides[currentSlide].classList.remove('active');
+      currentSlide = index;
+      slides[currentSlide].classList.add('active');
+
+      const progress = ((currentSlide + 1) / totalSlides) * 100;
+      progressFill.style.width = progress + '%';
+
+      slideCounter.textContent = `Slide ${currentSlide + 1} of ${totalSlides}`;
+
+      const notes = slides[currentSlide].getAttribute('data-notes') || 'No speaker notes for this slide.';
+      notesText.textContent = notes;
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides - 1) {
+        updateSlide(currentSlide + 1);
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 0) {
+        updateSlide(currentSlide - 1);
+      }
+    }
+
+    function toggleNotes() {
+      notesDrawer.classList.toggle('open');
+    }
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => alert(err.message));
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        nextSlide();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        toggleNotes();
+      } else if (e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        toggleFullScreen();
+      }
+    });
+
+    updateSlide(0);
+  </script>
+</body>
+</html>

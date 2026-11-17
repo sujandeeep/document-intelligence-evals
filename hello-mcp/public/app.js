@@ -41,6 +41,207 @@ const nextTakeBtn = document.getElementById('nextTakeBtn');
 const takePositionBadge = document.getElementById('takePositionBadge');
 const takeSelectorBar = document.getElementById('takeSelectorBar');
 
+// Document Grounding & Prompt Modes Elements
+const chatbotDocFileInput = document.getElementById('chatbotDocFileInput');
+const docUploadTriggerBtn = document.getElementById('docUploadTriggerBtn');
+const docUploadIcon = document.getElementById('docUploadIcon');
+const docUploadLabel = document.getElementById('docUploadLabel');
+const docActivePill = document.getElementById('docActivePill');
+const docFileName = document.getElementById('docFileName');
+const docMetaBadge = document.getElementById('docMetaBadge');
+const docPreviewBtn = document.getElementById('docPreviewBtn');
+const docRemoveBtn = document.getElementById('docRemoveBtn');
+const promptModeSelect = document.getElementById('promptModeSelect');
+const promptDrawerBtn = document.getElementById('promptDrawerBtn');
+const promptInfoDrawer = document.getElementById('promptInfoDrawer');
+const promptInfoTitle = document.getElementById('promptInfoTitle');
+const promptInfoDesc = document.getElementById('promptInfoDesc');
+const promptInfoInstruction = document.getElementById('promptInfoInstruction');
+const closePromptInfoBtn = document.getElementById('closePromptInfoBtn');
+const docPreviewModal = document.getElementById('docPreviewModal');
+const closeDocPreviewModalBtn = document.getElementById('closeDocPreviewModalBtn');
+const previewDocModalTitle = document.getElementById('previewDocModalTitle');
+const previewDocModalSub = document.getElementById('previewDocModalSub');
+const docPreviewTextContent = document.getElementById('docPreviewTextContent');
+
+// 5 Fixated Prompt Presets
+const PROMPT_PRESETS = {
+    executive_summary: {
+        id: "executive_summary",
+        name: "Executive Summary & Synthesis",
+        tag: "Executive",
+        description: "Concise, strategic takeaways, high-level synthesis and executive framing.",
+        instruction: "You are an elite Executive Research Analyst. Your role is to analyze the provided document and provide concise, high-impact executive summaries. Focus on strategic implications, key numbers, bottom-line conclusions, and high-level synthesis. Avoid unnecessary jargon or granular minutiae. Structure your responses with bold headers and crisp bullet points suitable for C-level leadership."
+    },
+    fact_checker: {
+        id: "fact_checker",
+        name: "Fact-Checking & Evidence Verification",
+        tag: "Verification",
+        description: "Strict factual accuracy, verbatim evidence citations, section references, and claim validation.",
+        instruction: "You are a rigorous Document Fact-Checker and Evidence Verifier. Analyze the provided document with extreme precision. For every assertion, provide exact verbatim quotes from the text as evidence and cite the section or context. If an answer or detail is not explicitly supported by the text, explicitly state: 'Not substantiated by the document.' Distinguish clearly between direct factual statements and interpreted inferences."
+    },
+    critical_auditor: {
+        id: "critical_auditor",
+        name: "Critical & Risk Auditor",
+        tag: "Auditor",
+        description: "Identifies flaws, hidden assumptions, missing evidence, risk factors, and counter-arguments.",
+        instruction: "You are an adversarial Technical & Risk Auditor. Your objective is to probe the document for hidden assumptions, methodological flaws, omitted variables, logical fallacies, operational risks, and potential failure modes. Do not accept claims at face value. Highlight what the document fails to explain, potential biases, and critical gaps."
+    },
+    action_extractor: {
+        id: "action_extractor",
+        name: "Action Item & Table Extractor",
+        tag: "Action Items",
+        description: "Structured tabular data extraction, deliverables, owners, deadlines, and procedural next steps.",
+        instruction: "You are an Operations & Data Extraction Specialist. Your role is to convert document contents into highly actionable, structured deliverables. Where appropriate, format your output as Markdown tables containing Item, Category, Description, Owner/Stakeholder, and Action Required. Extract concrete next steps, deadlines, milestones, and dependencies."
+    },
+    comprehensive_qa: {
+        id: "comprehensive_qa",
+        name: "Comprehensive Q&A Explainer",
+        tag: "Deep Explainer",
+        description: "In-depth, pedagogical answers explaining technical concepts thoroughly with full document context.",
+        instruction: "You are a Senior Technical Explainer and Domain Expert. Your role is to answer questions regarding the document with thorough, exhaustive, and pedagogical depth. Unpack complex concepts, connect related sections within the document, provide contextual explanations, and ensure the reader achieves complete comprehension of the subject matter."
+    }
+};
+
+let activeDocument = {
+    filename: null,
+    text: '',
+    filesize: 0,
+    word_count: 0,
+    est_tokens: 0
+};
+let activePromptMode = localStorage.getItem('chatbot_prompt_mode') || 'executive_summary';
+
+function updateDocUI() {
+    if (activeDocument && activeDocument.filename) {
+        if (docUploadTriggerBtn) docUploadTriggerBtn.style.display = 'none';
+        if (docActivePill) docActivePill.style.display = 'inline-flex';
+        if (docFileName) docFileName.innerText = activeDocument.filename;
+        if (docMetaBadge) docMetaBadge.innerText = `~${(activeDocument.word_count || 0).toLocaleString()} words`;
+        if (userInput) userInput.placeholder = `Ask any question regarding "${activeDocument.filename}"...`;
+    } else {
+        if (docUploadTriggerBtn) docUploadTriggerBtn.style.display = 'inline-flex';
+        if (docActivePill) docActivePill.style.display = 'none';
+        if (userInput) userInput.placeholder = 'Upload a document above or ask any question...';
+    }
+}
+
+// Load saved document from localStorage
+const savedDoc = localStorage.getItem('chatbot_active_doc');
+if (savedDoc) {
+    try {
+        activeDocument = JSON.parse(savedDoc);
+        updateDocUI();
+    } catch (e) {}
+}
+
+if (docUploadTriggerBtn && chatbotDocFileInput) {
+    docUploadTriggerBtn.addEventListener('click', () => {
+        chatbotDocFileInput.click();
+    });
+
+    chatbotDocFileInput.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        docUploadLabel.innerText = 'Extracting...';
+        docUploadIcon.innerText = '⏳';
+        logSystemEvent(`[Doc Grounding] Extracting text from ${file.name}...`, 'info');
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            const res = await fetch('/api/upload_doc', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to upload document');
+
+            activeDocument = {
+                filename: data.filename,
+                text: data.text,
+                filesize: data.filesize,
+                word_count: data.word_count,
+                est_tokens: data.est_tokens
+            };
+            localStorage.setItem('chatbot_active_doc', JSON.stringify(activeDocument));
+            updateDocUI();
+            logSystemEvent(`[Doc Grounding] Grounded on "${data.filename}" (~${data.word_count} words • ~${data.est_tokens} tokens)`, 'success');
+        } catch (err) {
+            logSystemEvent(`[Doc Error] ${err.message}`, 'error');
+            alert(`Document upload error: ${err.message}`);
+        } finally {
+            docUploadLabel.innerText = 'Upload Document';
+            docUploadIcon.innerText = '📄';
+            chatbotDocFileInput.value = '';
+        }
+    });
+}
+
+if (docRemoveBtn) {
+    docRemoveBtn.addEventListener('click', () => {
+        activeDocument = { filename: null, text: '', filesize: 0, word_count: 0, est_tokens: 0 };
+        localStorage.removeItem('chatbot_active_doc');
+        updateDocUI();
+        logSystemEvent('[Doc Grounding] Document context cleared.', 'info');
+    });
+}
+
+if (docPreviewBtn && docPreviewModal) {
+    docPreviewBtn.addEventListener('click', () => {
+        if (!activeDocument.text) return;
+        previewDocModalTitle.innerText = `📄 ${activeDocument.filename}`;
+        previewDocModalSub.innerText = `~${(activeDocument.word_count || 0).toLocaleString()} words • ~${(activeDocument.est_tokens || 0).toLocaleString()} tokens`;
+        docPreviewTextContent.innerText = activeDocument.text;
+        docPreviewModal.style.display = 'flex';
+    });
+}
+
+if (closeDocPreviewModalBtn && docPreviewModal) {
+    closeDocPreviewModalBtn.addEventListener('click', () => {
+        docPreviewModal.style.display = 'none';
+    });
+}
+
+function updatePromptInfoDrawer() {
+    const preset = PROMPT_PRESETS[activePromptMode] || PROMPT_PRESETS['executive_summary'];
+    if (promptInfoTitle) promptInfoTitle.innerText = preset.name;
+    if (promptInfoDesc) promptInfoDesc.innerText = preset.description;
+    if (promptInfoInstruction) promptInfoInstruction.innerText = preset.instruction;
+}
+
+if (promptModeSelect) {
+    promptModeSelect.value = activePromptMode;
+    promptModeSelect.addEventListener('change', (e) => {
+        activePromptMode = e.target.value;
+        localStorage.setItem('chatbot_prompt_mode', activePromptMode);
+        const preset = PROMPT_PRESETS[activePromptMode];
+        if (preset) {
+            logSystemEvent(`[Prompt Mode] Switched to "${preset.name}" (${preset.tag})`, 'info');
+            if (promptInfoDrawer && promptInfoDrawer.style.display !== 'none') {
+                updatePromptInfoDrawer();
+            }
+        }
+    });
+}
+
+if (promptDrawerBtn && promptInfoDrawer) {
+    promptDrawerBtn.addEventListener('click', () => {
+        const isHidden = promptInfoDrawer.style.display === 'none';
+        promptInfoDrawer.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) {
+            updatePromptInfoDrawer();
+        }
+    });
+}
+
+if (closePromptInfoBtn && promptInfoDrawer) {
+    closePromptInfoBtn.addEventListener('click', () => {
+        promptInfoDrawer.style.display = 'none';
+    });
+}
+
 // System Logging
 function logSystemEvent(msg, type = 'info') {
     const div = document.createElement('div');
@@ -80,45 +281,49 @@ if (savedHistory) {
             }
         });
     } catch (e) {
-        messages = [{ role: "system", content: "You are MathRouter..." }];
-        appendMessage('bot', "✨ Hello! I'm MathRouter, your calculator agent. What calculation would you like to perform today?");
+        messages = [{ role: "system", content: "You are a Document Intelligence Assistant." }];
+        appendMessage('bot', "✨ Hello! I'm your Document Intelligence Assistant. Upload a document above and ask any question regarding it.");
     }
 } else {
-    messages.push({ role: "system", content: "You are MathRouter..." });
+    messages.push({ role: "system", content: "You are a Document Intelligence Assistant." });
     saveHistory();
-    appendMessage('bot', "✨ Hello! I'm MathRouter, your calculator agent. What calculation would you like to perform today?");
+    appendMessage('bot', "✨ Hello! I'm your Document Intelligence Assistant. Upload a document above and ask any question regarding it.");
 }
 
-// Toggles setup
+// Toggles setup (guarded)
 const toggles = ['add', 'sub', 'mul', 'div'];
 toggles.forEach(t => {
     const el = document.getElementById(`toggle_${t}`);
-    const saved = localStorage.getItem(`toggle_${t}`);
-    if (saved !== null) {
-        el.checked = saved === 'true';
+    if (el) {
+        const saved = localStorage.getItem(`toggle_${t}`);
+        if (saved !== null) {
+            el.checked = saved === 'true';
+        }
+        el.addEventListener('change', (e) => {
+            localStorage.setItem(`toggle_${t}`, e.target.checked);
+        });
     }
-    el.addEventListener('change', (e) => {
-        localStorage.setItem(`toggle_${t}`, e.target.checked);
-    });
 });
 
 function getToggles() {
     return {
-        add: document.getElementById('toggle_add').checked,
-        sub: document.getElementById('toggle_sub').checked,
-        mul: document.getElementById('toggle_mul').checked,
-        div: document.getElementById('toggle_div').checked,
+        add: document.getElementById('toggle_add')?.checked ?? false,
+        sub: document.getElementById('toggle_sub')?.checked ?? false,
+        mul: document.getElementById('toggle_mul')?.checked ?? false,
+        div: document.getElementById('toggle_div')?.checked ?? false,
     };
 }
 
-settingsBtn.addEventListener('click', () => {
-    settingsPanel.classList.toggle('active');
-});
+if (settingsBtn && settingsPanel) {
+    settingsBtn.addEventListener('click', () => {
+        settingsPanel.classList.toggle('active');
+    });
+}
 
 clearChatBtn.addEventListener('click', async () => {
     if(confirm('Are you sure you want to clear the entire chat history?')) {
         localStorage.removeItem('mathrouter_history');
-        messages = [{ role: "system", content: "You are MathRouter..." }];
+        messages = [{ role: "system", content: "You are a Document Intelligence Assistant." }];
         chatBox.innerHTML = '';
         try {
             await fetch('/api/clear', { method: 'POST', credentials: 'include' });
@@ -210,6 +415,8 @@ function startRecording(explicit = false) {
         recording_title: recTitle,
         start_time: new Date().toISOString(),
         model: "gpt-4o",
+        document_name: activeDocument.filename || null,
+        prompt_key: activePromptMode || "executive_summary",
         total_tokens: 0,
         total_latency_seconds: 0,
         turns: []
@@ -257,7 +464,10 @@ function recordSingleTurn(userMsg, assistantMsg, toolCalls, latencySec, tokenUsa
         tool_calls: toolCalls,
         latency_seconds: latencySec,
         usage: tokenUsage || {},
-        model: modelName || "gpt-4o"
+        model: modelName || "gpt-4o",
+        document_text: activeDocument.text || "",
+        document_name: activeDocument.filename || "",
+        prompt_key: activePromptMode || "executive_summary"
     };
     
     currentSession.turns.push(turnData);
@@ -363,7 +573,13 @@ async function sendMessage() {
     sendBtn.disabled = true;
     userInput.disabled = true;
     
-    await processBackendRequest({ messages, toggles: getToggles() });
+    await processBackendRequest({
+        messages,
+        toggles: getToggles(),
+        document_text: activeDocument.text || "",
+        document_name: activeDocument.filename || "",
+        prompt_key: activePromptMode || "executive_summary"
+    });
     
     sendBtn.disabled = false;
     userInput.disabled = false;
@@ -966,7 +1182,7 @@ function renderFormattedTurns(turns) {
             ${toolsHtml}
             
             <div class="bubble-row">
-                <span class="bubble-label">🤖 MathRouter Assistant</span>
+                <span class="bubble-label">🤖 Document Assistant</span>
                 <div class="bubble-assistant">${escapeHtml(turn.assistant_response || turn.assistant || 'N/A')}</div>
             </div>
         `;

@@ -131,14 +131,10 @@ def run_10_gpt_evaluations():
     total_tokens_accum = 0
     total_latency_accum = 0.0
 
+    import prompts
     system_message = {
         "role": "system",
-        "content": (
-            "You are MathRouter, a meticulous calculator agent. "
-            "You do NOT do math in your head. When given a math calculation, "
-            "you MUST call the appropriate mathematical tool. "
-            "Do not use LaTeX formatting."
-        )
+        "content": prompts.build_system_prompt("executive_summary")
     }
 
     for idx, user_prompt in enumerate(EVAL_PROBLEMS, start=1):
