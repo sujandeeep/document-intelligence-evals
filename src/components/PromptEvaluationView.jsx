@@ -1099,7 +1099,11 @@ export function PromptEvaluationView({
             </div>
             <select
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedModel(val);
+              }}
+              disabled={isEvaluating}
               style={{
                 width: '100%',
                 marginTop: 'var(--space-1)',
@@ -1112,10 +1116,18 @@ export function PromptEvaluationView({
                 fontSize: '12px',
                 fontWeight: 500,
                 outline: 'none',
+                cursor: isEvaluating ? 'not-allowed' : 'pointer',
               }}
             >
               {AVAILABLE_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
+                <option
+                  key={m.id}
+                  value={m.id}
+                  style={{
+                    backgroundColor: 'var(--surface-base)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
                   {m.label} ({m.tier}) — In: {m.inputPrice} / Out: {m.outputPrice}
                 </option>
               ))}
@@ -1175,6 +1187,7 @@ export function PromptEvaluationView({
                 <select
                   value={generatorModel}
                   onChange={(e) => setGeneratorModel(e.target.value)}
+                  disabled={isGeneratingPrompts}
                   style={{
                     width: '100%',
                     height: 'var(--control-height-md)',
@@ -1186,10 +1199,18 @@ export function PromptEvaluationView({
                     fontSize: '12px',
                     fontWeight: 500,
                     outline: 'none',
+                    cursor: isGeneratingPrompts ? 'not-allowed' : 'pointer',
                   }}
                 >
                   {AVAILABLE_MODELS.map((m) => (
-                    <option key={m.id} value={m.id}>
+                    <option
+                      key={m.id}
+                      value={m.id}
+                      style={{
+                        backgroundColor: 'var(--surface-base)',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
                       {m.label} ({m.tier})
                     </option>
                   ))}
@@ -1271,6 +1292,7 @@ export function PromptEvaluationView({
             <select
               value={selectedJudgeModel}
               onChange={(e) => setSelectedJudgeModel(e.target.value)}
+              disabled={isEvaluating}
               style={{
                 width: '100%',
                 marginTop: 'var(--space-1)',
@@ -1283,10 +1305,18 @@ export function PromptEvaluationView({
                 fontSize: '12px',
                 fontWeight: 500,
                 outline: 'none',
+                cursor: isEvaluating ? 'not-allowed' : 'pointer',
               }}
             >
               {AVAILABLE_MODELS.map((m) => (
-                <option key={m.id} value={m.id}>
+                <option
+                  key={m.id}
+                  value={m.id}
+                  style={{
+                    backgroundColor: 'var(--surface-base)',
+                    color: 'var(--text-primary)',
+                  }}
+                >
                   {m.label} ({m.tier})
                 </option>
               ))}
