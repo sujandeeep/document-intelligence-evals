@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 305,
+    "prompt_tokens": 224,
+    "completion_tokens": 81
+  },
+  "turn_id": "gemini_eval_1793957013_take_2",
+  "timestamp": "2026-11-06T09:23:37.000Z",
+  "session_id": "gemini_eval_1793957013",
+  "take_label": "TAKE #2",
+  "tool_calls": [],
+  "take_number": 2,
+  "turn_number": 2,
+  "input_tokens": 224,
+  "total_tokens": 305,
+  "user_message": "YES",
+  "output_tokens": 81,
+  "prompt_tokens": 224,
+  "inference_time": 1.918,
+  "latency_seconds": 1.918,
+  "recording_title": "recording 4(  gemini)",
+  "recording_number": 4,
+  "completion_tokens": 81,
+  "assistant_response": "Alright, wonderful! You've confirmed you'd like me to divide 500 by 25. Let's get that done for you right away.\n\nSimulating the division...\n\nThe result of dividing 500 by 25 is 20.\n\nIf you have another calculation in mind or need help with anything else, feel free to let me know!"
+}

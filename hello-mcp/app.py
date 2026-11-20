@@ -1388,8 +1388,74 @@ async def execute_multi_model_eval(request: Request):
             )
         )
 
+        # Auto-save Multi-Model Eval session to PostgreSQL and disk
+        saved_session_id = f"doc_multi_{int(time.time())}"
+        rec_title = f"MULTI-MODEL: {body.get('document_name', 'Doc')[:22]} ({winner['model_id'] if winner else 'Eval'})"
+        try:
+            total_toks = sum(int(r.get("total_tokens", 0)) for r in eval_results)
+            total_lat = sum(float(r.get("latency_seconds", 0)) for r in eval_results)
+            doc_name = body.get("document_name", "") or "Document"
+            win_name = winner.get("model_id", "Pareto Winner") if winner else "Multi-Model"
+            
+            with psycopg.connect(POSTGRES_URL, connect_timeout=3) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO eval_sessions (
+                            session_id, recording_title, recording_number, model,
+                            start_time, end_time, total_turns, total_tokens,
+                            total_latency_seconds, first_message, payload, domain
+                        ) VALUES (%s, %s, %s, %s, NOW(), NOW(), %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (session_id) DO NOTHING;
+                    """, (
+                        saved_session_id, rec_title, 1, win_name,
+                        len(eval_results), total_toks, total_lat,
+                        user_message[:200], json.dumps({
+                            "type": "multi_model_eval",
+                            "winner": winner,
+                            "intersection_point": intersection_point,
+                            "user_prompt": user_message,
+                            "document_name": doc_name
+                        }), "doc_intel"
+                    ))
+                    
+                    for idx, r in enumerate(sorted_eval_results, 1):
+                        turn_id = f"{saved_session_id}_{r['model_id']}"
+                        p_toks = int(r.get("input_tokens", 0))
+                        c_toks = int(r.get("output_tokens", 0))
+                        cur.execute("""
+                            INSERT INTO eval_turns (
+                                turn_id, session_id, turn_number, take_label,
+                                recording_title, model, user_message, assistant_response,
+                                latency_seconds, prompt_tokens, completion_tokens, total_tokens, payload, domain
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (turn_id) DO NOTHING;
+                        """, (
+                            turn_id, saved_session_id, idx, f"{r['model_id']} ({r.get('quality_score', 0)}%)",
+                            rec_title, r["model_id"], user_message, r.get("output", ""),
+                            float(r.get("latency_seconds", 0)), p_toks, c_toks, int(r.get("total_tokens", 0)),
+                            json.dumps(r), "doc_intel"
+                        ))
+                    conn.commit()
+
+            disk_save_path = os.path.join(RECORDINGS_DIR, f"{saved_session_id}.json")
+            with open(disk_save_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "session_id": saved_session_id,
+                    "recording_title": rec_title,
+                    "model": win_name,
+                    "domain": "doc_intel",
+                    "user_prompt": user_message,
+                    "document_name": doc_name,
+                    "winner": winner,
+                    "results": sorted_eval_results
+                }, f, indent=2)
+        except Exception as save_err:
+            print(f"Warning: Failed to auto-save multi-model recording: {save_err}")
+
         return {
             "status": "ok",
+            "session_id": saved_session_id,
+            "recording_title": rec_title,
             "evaluated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             "judge_model": f"{judge_model_id} (LLM as Judge)",
             "judge_mode": f"LLM as Judge ({judge_model_id})",
@@ -1814,8 +1880,75 @@ async def execute_prompt_eval(request: Request):
             "output_price": 2.0
         })
 
+        # Auto-save Prompt Matrix Eval session to PostgreSQL and disk
+        saved_session_id = f"doc_prompt_{int(time.time())}"
+        doc_name = document_name or "Document"
+        win_name = winner.get("name", "Pareto Winner") if winner else f"{len(system_prompts)} Prompts"
+        rec_title = f"PROMPT MATRIX: {doc_name[:22]} ({win_name})"
+        try:
+            total_toks = sum(int(r.get("total_tokens", 0)) for r in eval_results)
+            total_lat = sum(float(r.get("latency", 0)) for r in eval_results)
+            
+            with psycopg.connect(POSTGRES_URL, connect_timeout=3) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO eval_sessions (
+                            session_id, recording_title, recording_number, model,
+                            start_time, end_time, total_turns, total_tokens,
+                            total_latency_seconds, first_message, payload, domain
+                        ) VALUES (%s, %s, %s, %s, NOW(), NOW(), %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (session_id) DO NOTHING;
+                    """, (
+                        saved_session_id, rec_title, 1, model_id,
+                        len(eval_results), total_toks, total_lat,
+                        user_message[:200], json.dumps({
+                            "type": "prompt_eval",
+                            "model_id": model_id,
+                            "winner": winner,
+                            "intersection_point": intersection_point,
+                            "user_prompt": user_message,
+                            "document_name": doc_name
+                        }), "doc_intel"
+                    ))
+                    
+                    for idx, r in enumerate(sorted_results, 1):
+                        turn_id = f"{saved_session_id}_{r['id']}"
+                        p_toks = int(r.get("input_tokens", 0))
+                        c_toks = int(r.get("output_tokens", 0))
+                        cur.execute("""
+                            INSERT INTO eval_turns (
+                                turn_id, session_id, turn_number, take_label,
+                                recording_title, model, user_message, assistant_response,
+                                latency_seconds, prompt_tokens, completion_tokens, total_tokens, payload, domain
+                            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (turn_id) DO NOTHING;
+                        """, (
+                            turn_id, saved_session_id, idx, f"{r['name']} ({r.get('quality_score', 0)}%)",
+                            rec_title, model_id, user_message, r.get("response", ""),
+                            float(r.get("latency", 0)), p_toks, c_toks, int(r.get("total_tokens", 0)),
+                            json.dumps(r), "doc_intel"
+                        ))
+                    conn.commit()
+
+            disk_save_path = os.path.join(RECORDINGS_DIR, f"{saved_session_id}.json")
+            with open(disk_save_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "session_id": saved_session_id,
+                    "recording_title": rec_title,
+                    "model": model_id,
+                    "domain": "doc_intel",
+                    "user_prompt": user_message,
+                    "document_name": doc_name,
+                    "winner": winner,
+                    "results": sorted_results
+                }, f, indent=2)
+        except Exception as save_err:
+            print(f"Warning: Failed to auto-save prompt recording: {save_err}")
+
         return {
             "status": "ok",
+            "session_id": saved_session_id,
+            "recording_title": rec_title,
             "evaluated_at": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             "judge_model": f"{judge_model_id} (LLM as Judge)",
             "judge_mode": f"LLM as Judge ({judge_model_id})",
@@ -2137,6 +2270,13 @@ async def get_eval_comparison(session_id: str = None, recording_number: int = No
                                     baseline_id = g_turn_row[0]
 
         if not gpt_id or not baseline_id:
+            if session_id:
+                return {
+                    "gpt_session_id": session_id,
+                    "has_baseline": False,
+                    "message": "No paired baseline simulation found for this session.",
+                    "turns": []
+                }
             target_gpt, target_baseline = find_paired_sessions(recording_number)
             if target_gpt: gpt_id = target_gpt["session_id"]
             if target_baseline: baseline_id = target_baseline["session_id"]
@@ -2238,17 +2378,20 @@ async def list_recordings():
                 cur.execute("""
                     SELECT session_id, recording_title, recording_number, model,
                            start_time, end_time, total_turns, total_tokens,
-                           total_latency_seconds, created_at, payload
+                           total_latency_seconds, created_at, payload, domain
                     FROM eval_sessions ORDER BY created_at ASC;
                 """)
                 for r in cur.fetchall():
                     s_id = r[0]
                     rec_title = r[1] or f"RECORDING {len(recordings_map) + 1}"
+                    domain_val = r[11] if (len(r) > 11 and r[11]) else ('doc_intel' if ('mangala' in s_id.lower() or '20261116' in s_id or 'doc_' in s_id) else 'mathrouter')
                     recordings_map[s_id] = {
                         "session_id": s_id,
                         "recording_title": rec_title,
                         "recording_number": r[2] or (len(recordings_map) + 1),
                         "model": r[3],
+                        "domain": domain_val,
+                        "domain_label": "Document Intelligence" if domain_val == "doc_intel" else "MathRouter MCP",
                         "start_time": r[4].isoformat() if r[4] else "",
                         "end_time": r[5].isoformat() if r[5] else "",
                         "total_takes": r[6] or 0,
@@ -2265,20 +2408,23 @@ async def list_recordings():
                 cur.execute("""
                     SELECT turn_id, session_id, turn_number, take_label, recording_title,
                            model, timestamp, user_message, assistant_response,
-                           latency_seconds, total_tokens, payload, prompt_tokens, completion_tokens, tool_calls
+                           latency_seconds, total_tokens, payload, prompt_tokens, completion_tokens, tool_calls, domain
                     FROM eval_turns ORDER BY created_at ASC, turn_number ASC;
                 """)
                 for r in cur.fetchall():
-                    t_id, s_id, t_num, t_label, rec_title, model, ts, u_msg, a_res, lat, toks, payload, p_tok, c_tok, t_calls = r
+                    t_id, s_id, t_num, t_label, rec_title, model, ts, u_msg, a_res, lat, toks, payload, p_tok, c_tok, t_calls, t_domain = r
                     
                     if s_id not in recordings_map:
                         rec_num = len(recordings_map) + 1
                         rec_title_final = rec_title or f"RECORDING {rec_num}"
+                        d_val = t_domain or ('doc_intel' if ('mangala' in s_id.lower() or '20261116' in s_id or 'doc_' in s_id) else 'mathrouter')
                         recordings_map[s_id] = {
                             "session_id": s_id,
                             "recording_title": rec_title_final,
                             "recording_number": rec_num,
                             "model": model,
+                            "domain": d_val,
+                            "domain_label": "Document Intelligence" if d_val == "doc_intel" else "MathRouter MCP",
                             "start_time": ts.isoformat() if ts else "",
                             "total_takes": 0,
                             "total_tokens": 0,
@@ -2288,6 +2434,7 @@ async def list_recordings():
                         }
 
                     take_label_final = t_label or f"TAKE #{t_num}"
+                    p_data = payload if isinstance(payload, dict) else {}
                     take_obj = {
                         "turn_id": t_id,
                         "session_id": s_id,
@@ -2313,8 +2460,14 @@ async def list_recordings():
                             6
                         ),
                         "tool_calls": t_calls or [],
-                        "payload": payload if isinstance(payload, dict) else {},
-                        "model": model
+                        "document_text": p_data.get("document_text") or "",
+                        "document_name": p_data.get("document_name") or "",
+                        "prompt_key": p_data.get("prompt_key") or "",
+                        "quality_score": p_data.get("quality_score") or 0,
+                        "judge_critique": p_data.get("judge_critique") or "",
+                        "payload": p_data,
+                        "model": model,
+                        "domain": t_domain or recordings_map[s_id].get("domain", "mathrouter")
                     }
                     if not any(t["turn_id"] == t_id for t in recordings_map[s_id]["takes"]):
                         recordings_map[s_id]["takes"].append(take_obj)
@@ -2508,6 +2661,10 @@ async def list_recordings():
     orphan_baseline_sessions = []
 
     for s_obj in recordings_list:
+        if not s_obj.get("domain"):
+            is_doc = ('mangala' in s_obj.get("session_id", "").lower() or '20261116' in s_obj.get("session_id", "") or 'doc_' in s_obj.get("session_id", ""))
+            s_obj["domain"] = "doc_intel" if is_doc else "mathrouter"
+            s_obj["domain_label"] = "Document Intelligence" if s_obj["domain"] == "doc_intel" else "MathRouter MCP"
         s_id = s_obj.get("session_id", "")
         model_name = s_obj.get("model", "")
         title_str = (s_obj.get("recording_title") or "").lower()
@@ -2540,7 +2697,10 @@ async def list_recordings():
 
     for idx, rec in enumerate(primary_sessions, start=1):
         rec["recording_number"] = idx
-        rec["recording_title"] = f"RECORDING {idx}"
+        existing_title = rec.get("recording_title") or ""
+        if not existing_title or existing_title.startswith("RECORDING ") or existing_title.startswith("recording "):
+            domain_tag = " [Doc Intel]" if rec.get("domain") == "doc_intel" else ""
+            rec["recording_title"] = f"RECORDING {idx}{domain_tag}"
         for t in rec["takes"]:
             t["recording_title"] = rec["recording_title"]
             t["recording_number"] = idx
@@ -2707,4 +2867,7 @@ async def delete_recording(filename: str):
 
     return {"status": "ok", "deleted": filename}
 
-app.mount("/", StaticFiles(directory="public", html=True), name="public")
+pub_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "public")
+if os.path.exists(pub_dir):
+    app.mount("/", StaticFiles(directory=pub_dir, html=True), name="public")
+

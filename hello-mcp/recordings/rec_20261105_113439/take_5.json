@@ -1,0 +1,26 @@
+{
+  "turn_id": "rec_20261105_113439_take_5",
+  "session_id": "rec_20261105_113439",
+  "recording_title": "RECORDING 5",
+  "recording_number": 5,
+  "take_number": 5,
+  "turn_number": 5,
+  "take_label": "TAKE #5",
+  "timestamp": "2026-11-05T11:35:08.113Z",
+  "user_message": "892e4687e+7235627",
+  "assistant_response": "It seems like you're trying to add two numbers, but the format is unclear. Could you please provide the numbers you want to add in a standard numerical format?",
+  "tool_calls": [],
+  "latency_seconds": 1.168,
+  "usage": {
+    "prompt_tokens": 2045,
+    "completion_tokens": 33,
+    "total_tokens": 2078
+  },
+  "model": "gpt-4o",
+  "inference_time": 1.168,
+  "prompt_tokens": 2045,
+  "input_tokens": 2045,
+  "completion_tokens": 33,
+  "output_tokens": 33,
+  "total_tokens": 2078
+}

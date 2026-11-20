@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { SupportedViewportGate } from './components/SupportedViewportGate';
 import { MultiModelEvaluationModal } from './components/MultiModelEvaluationModal';
 import { PromptEvaluationView } from './components/PromptEvaluationView';
+import { AllExperimentsDataHub } from './components/AllExperimentsDataHub';
+import { RagEvaluationView } from './components/RagEvaluationView';
 import {
   Database,
   Activity,
@@ -49,8 +51,8 @@ export default function App() {
     typeof window !== 'undefined' ? window.innerWidth : 1200
   );
 
-  // Active Navigation View: 'sessions' | 'database' | 'metrics'
-  const [activeNav, setActiveNav] = useState('sessions');
+  // Active Navigation View: 'all-experiments' (Default) | 'sessions' | 'evals' | 'prompt-evals' | 'rag' | 'database' | 'metrics'
+  const [activeNav, setActiveNav] = useState('all-experiments');
 
   // Live Backend & Telemetry State
   const [recordings, setRecordings] = useState([]);
@@ -1179,6 +1181,102 @@ export default function App() {
               transition: activeDrag === 'panel1' ? 'none' : 'width 150ms cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
+            {/* Nav: All Experiments (Default View) */}
+            <div
+              id="nav-all-experiments"
+              onClick={() => setActiveNav('all-experiments')}
+              style={{
+                height: '34px',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 18px',
+                gap: '12px',
+                borderLeft:
+                  activeNav === 'all-experiments'
+                    ? '3px solid var(--intent-primary)'
+                    : '3px solid transparent',
+                backgroundColor:
+                  activeNav === 'all-experiments' ? 'var(--surface-selected)' : 'transparent',
+                color:
+                  activeNav === 'all-experiments' ? 'var(--intent-primary)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+              title="All Experiments Master Hub: Combined Datasets & Benchmarks"
+            >
+              <BarChart3 size={15} />
+              {isWide && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span style={{ fontSize: '12px', fontWeight: activeNav === 'all-experiments' ? 600 : 500 }}>
+                    All Experiments
+                  </span>
+                  <span
+                    className="tabular-nums"
+                    style={{
+                      fontSize: '10px',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    200+
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Nav: RAG Studio */}
+            <div
+              id="nav-rag"
+              onClick={() => setActiveNav('rag')}
+              style={{
+                height: '34px',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 18px',
+                gap: '12px',
+                borderLeft:
+                  activeNav === 'rag'
+                    ? '3px solid var(--intent-primary)'
+                    : '3px solid transparent',
+                backgroundColor:
+                  activeNav === 'rag' ? 'var(--surface-selected)' : 'transparent',
+                color:
+                  activeNav === 'rag' ? 'var(--intent-primary)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+              title="Enterprise RAG Studio: Tri-Engine Benchmarks & pgvector DB"
+            >
+              <Database size={15} />
+              {isWide && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span style={{ fontSize: '12px', fontWeight: activeNav === 'rag' ? 600 : 500 }}>
+                    RAG Studio
+                  </span>
+                  <span
+                    className="tabular-nums"
+                    style={{
+                      fontSize: '10px',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    100
+                  </span>
+                </div>
+              )}
+            </div>
+
             {/* Nav: Sessions (Primary View) */}
             <div
               id="nav-sessions"
@@ -1451,6 +1549,32 @@ export default function App() {
               aria-valuenow={displayedPanel1}
               aria-valuemin={180}
               aria-valuemax={320}
+            />
+          )}
+
+          {/* ====================================================================
+              VIEW: ALL EXPERIMENTS DATA HUB (MASTER COMBINED VIEW - DEFAULT)
+              ==================================================================== */}
+          {activeNav === 'all-experiments' && (
+            <AllExperimentsDataHub
+              showToast={showToast}
+              theme={theme}
+              displayedPanel2={displayedPanel2}
+              activeDrag={activeDrag}
+              handlePanel2SplitterMouseDown={handlePanel2SplitterMouseDown}
+              onNavigateToRag={() => setActiveNav('rag')}
+              onNavigateToMath={() => setActiveNav('sessions')}
+              onNavigateToPrompt={() => setActiveNav('prompt-evals')}
+            />
+          )}
+
+          {/* ====================================================================
+              VIEW: RAG INTELLIGENCE STUDIO
+              ==================================================================== */}
+          {activeNav === 'rag' && (
+            <RagEvaluationView
+              showToast={showToast}
+              theme={theme}
             />
           )}
 
@@ -4094,10 +4218,8 @@ export default function App() {
                             className="tabular-nums"
                             style={{
                               fontSize: '11px',
-                              padding: '3px 8px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: 'rgba(46, 160, 67, 0.15)',
-                              color: '#2ea043',
+                              padding: '2px 4px',
+                              color: 'var(--text-secondary)',
                               fontWeight: 600,
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -4111,27 +4233,21 @@ export default function App() {
                             className="tabular-nums"
                             style={{
                               fontSize: '11px',
-                              padding: '3px 8px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: 'var(--intent-primary-subtle)',
-                              color: 'var(--intent-primary)',
+                              padding: '2px 4px',
+                              color: 'var(--text-primary)',
                               fontWeight: 600,
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: '4px',
                             }}
                           >
-                            <Sparkles size={11} />
                             <span>{comparisonData.overall_token_savings_pct}% Fewer Tokens ({comparisonData.total_gpt_tokens} → {(comparisonData.total_gpt5_tokens || comparisonData.total_gemini_tokens)})</span>
                           </span>
                           <span
                             className="tabular-nums"
                             style={{
                               fontSize: '11px',
-                              padding: '3px 8px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: 'var(--surface-base)',
-                              border: '1px solid var(--border-default)',
+                              padding: '2px 4px',
                               color: 'var(--text-secondary)',
                               fontWeight: 600,
                               display: 'inline-flex',
@@ -4139,21 +4255,17 @@ export default function App() {
                               gap: '4px',
                             }}
                           >
-                            <Award size={11} />
                             <span>{comparisonData.math_accuracy_rate_pct}% Numerical Match</span>
                           </span>
                           <span
                             className="tabular-nums"
                             style={{
                               fontSize: '11px',
-                              padding: '3px 8px',
-                              borderRadius: 'var(--radius-xs)',
-                              backgroundColor: 'var(--surface-base)',
-                              border: '1px solid var(--border-default)',
+                              padding: '2px 4px',
                               color: 'var(--text-muted)',
                             }}
                           >
-                            ⏱️ Total: GPT-4o {comparisonData.total_gpt_latency_s}s vs GPT-6-sol {comparisonData.total_gpt5_latency_s || (comparisonData.total_gpt5_latency_s || comparisonData.total_gemini_latency_s)}s
+                            Total: GPT-4o {comparisonData.total_gpt_latency_s}s vs GPT-6-sol {comparisonData.total_gpt5_latency_s || (comparisonData.total_gpt5_latency_s || comparisonData.total_gemini_latency_s)}s
                           </span>
                         </div>
                       )}
@@ -4327,8 +4439,8 @@ export default function App() {
                             {/* Top Banner Header */}
                             <div
                               style={{
-                                background: 'linear-gradient(135deg, rgba(37, 99, 235, 0.14) 0%, rgba(16, 185, 129, 0.08) 100%)',
-                                padding: '16px 20px',
+                                backgroundColor: 'var(--surface-muted)',
+                                padding: '14px 18px',
                                 borderBottom: '1px solid var(--border-default)',
                                 display: 'flex',
                                 justifyContent: 'space-between',
@@ -4341,19 +4453,20 @@ export default function App() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <span
                                     style={{
-                                      fontSize: '11px',
-                                      fontWeight: 700,
-                                      letterSpacing: '0.05em',
+                                      fontSize: '10px',
+                                      fontWeight: 600,
+                                      letterSpacing: '0.04em',
                                       textTransform: 'uppercase',
-                                      backgroundColor: 'var(--intent-primary)',
-                                      color: '#ffffff',
-                                      padding: '3px 8px',
+                                      backgroundColor: 'transparent',
+                                      color: 'var(--text-secondary)',
+                                      border: '1px solid var(--border-default)',
+                                      padding: '2px 6px',
                                       borderRadius: 'var(--radius-xs)',
                                     }}
                                   >
-                                    COLLECTIVE EVALUATION CARD
+                                    SYNTHESIS
                                   </span>
-                                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                                  <h3 style={{ fontSize: '14px', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
                                     Holistic Benchmark Synthesis: RECORDING {recNum}
                                   </h3>
                                 </div>
@@ -4400,9 +4513,9 @@ export default function App() {
                               {/* Metric 1: Speedup */}
                               <div style={{ backgroundColor: 'var(--surface-base)', padding: '12px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
                                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                                  <Zap size={13} style={{ color: '#2ea043' }} /> ⚡ LATENCY & SPEEDUP
+                                  <Zap size={13} style={{ color: 'var(--text-secondary)' }} /> LATENCY & SPEEDUP
                                 </div>
-                                <div style={{ fontSize: '20px', fontWeight: 700, color: '#2ea043', margin: '6px 0 2px 0' }}>
+                                <div className="tabular-nums" style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 2px 0' }}>
                                   {speedupFactor}x Faster
                                 </div>
                                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -4413,9 +4526,9 @@ export default function App() {
                               {/* Metric 2: Token Economics */}
                               <div style={{ backgroundColor: 'var(--surface-base)', padding: '12px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
                                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                                  <Sparkles size={13} style={{ color: 'var(--intent-primary)' }} /> 💰 TOKEN ECONOMICS
+                                  <Sparkles size={13} style={{ color: 'var(--text-secondary)' }} /> TOKEN ECONOMICS
                                 </div>
-                                <div style={{ fontSize: '20px', fontWeight: 700, color: 'var(--intent-primary)', margin: '6px 0 2px 0' }}>
+                                <div className="tabular-nums" style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 2px 0' }}>
                                   {tokenSavingsPct}% Savings
                                 </div>
                                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -4426,9 +4539,9 @@ export default function App() {
                               {/* Metric 3: Mathematical Ground Truth */}
                               <div style={{ backgroundColor: 'var(--surface-base)', padding: '12px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
                                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                                  <CheckCircle2 size={13} style={{ color: '#38bdf8' }} /> 🎯 NUMERICAL MATCH
+                                  <CheckCircle2 size={13} style={{ color: 'var(--text-secondary)' }} /> NUMERICAL MATCH
                                 </div>
-                                <div style={{ fontSize: '20px', fontWeight: 700, color: '#38bdf8', margin: '6px 0 2px 0' }}>
+                                <div className="tabular-nums" style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 2px 0' }}>
                                   {matchRatePct}%
                                 </div>
                                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
@@ -4439,10 +4552,10 @@ export default function App() {
                               {/* Metric 4: Judge Consensus */}
                               <div style={{ backgroundColor: 'var(--surface-base)', padding: '12px 14px', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
                                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
-                                  <Scale size={13} style={{ color: '#fbbf24' }} /> ⚖️ LLM JUDGE SCORE
+                                  <Scale size={13} style={{ color: 'var(--text-secondary)' }} /> LLM JUDGE SCORE
                                 </div>
-                                <div style={{ fontSize: '20px', fontWeight: 700, color: '#fbbf24', margin: '6px 0 2px 0' }}>
-                                  {judgedTurns.length > 0 ? `${avgGpt5Score} / 5 ⭐` : '— / 5 ⏳'}
+                                <div className="tabular-nums" style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', margin: '6px 0 2px 0' }}>
+                                  {judgedTurns.length > 0 ? `${avgGpt5Score} / 5` : '— / 5'}
                                 </div>
                                 <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                                   {judgedTurns.length > 0 
@@ -4675,10 +4788,8 @@ export default function App() {
                                   className="tabular-nums"
                                   style={{
                                     fontSize: '11px',
-                                    padding: '3px 8px',
-                                    borderRadius: 'var(--radius-xs)',
-                                    backgroundColor: 'rgba(46, 160, 67, 0.15)',
-                                    color: '#2ea043',
+                                    padding: '2px 4px',
+                                    color: 'var(--text-secondary)',
                                     fontWeight: 600,
                                   }}
                                 >
@@ -4688,10 +4799,8 @@ export default function App() {
                                   className="tabular-nums"
                                   style={{
                                     fontSize: '11px',
-                                    padding: '3px 8px',
-                                    borderRadius: 'var(--radius-xs)',
-                                    backgroundColor: 'var(--intent-primary-subtle)',
-                                    color: 'var(--intent-primary)',
+                                    padding: '2px 4px',
+                                    color: 'var(--text-secondary)',
                                     fontWeight: 600,
                                   }}
                                 >
@@ -4811,14 +4920,14 @@ export default function App() {
                                     style={{
                                       fontSize: '10px',
                                       padding: '2px 6px',
-                                      backgroundColor: 'var(--intent-primary-subtle)',
-                                      color: 'var(--intent-primary)',
-                                      border: '1px solid var(--intent-primary)',
+                                      backgroundColor: 'transparent',
+                                      color: 'var(--text-secondary)',
+                                      border: '1px solid var(--border-default)',
                                       borderRadius: 'var(--radius-xs)',
-                                      fontWeight: 600,
+                                      fontWeight: 500,
                                     }}
                                   >
-                                    ⚡ Direct Parametric (Zero MCP Latency)
+                                    Direct Parametric (Zero MCP Latency)
                                   </span>
                                 </div>
 
@@ -4873,16 +4982,16 @@ export default function App() {
                                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span
                                           style={{
-                                            fontWeight: 700,
+                                            fontWeight: 600,
                                             fontSize: '11px',
-                                            padding: '3px 8px',
+                                            padding: '2px 6px',
                                             borderRadius: 'var(--radius-xs)',
-                                            backgroundColor: judgeData.winner === 'Model B' ? 'var(--intent-primary-subtle)' : (judgeData.winner === 'Model A' ? 'rgba(52, 211, 153, 0.15)' : 'var(--surface-muted)'),
-                                            color: judgeData.winner === 'Model B' ? 'var(--intent-primary)' : (judgeData.winner === 'Model A' ? '#34d399' : 'var(--text-primary)'),
-                                            border: '1px solid currentColor',
+                                            backgroundColor: 'transparent',
+                                            color: 'var(--text-primary)',
+                                            border: '1px solid var(--border-default)',
                                           }}
                                         >
-                                          🏆 Declared Winner: {judgeData.winner === 'Model B' ? 'GPT-6-sol' : (judgeData.winner === 'Model A' ? 'GPT-4o' : 'Tie / Equal')}
+                                          Winner: {judgeData.winner === 'Model B' ? 'GPT-6-sol' : (judgeData.winner === 'Model A' ? 'GPT-4o' : 'Tie / Equal')}
                                         </span>
                                         <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                                           Scores: GPT-4o {judgeData.gpt_score}/5 ⭐ • GPT-6-sol {(judgeData.gpt5_score ?? judgeData.gemini_score)}/5 ⭐

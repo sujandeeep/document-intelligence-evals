@@ -1,0 +1,53 @@
+{
+  "session_id": "eval_pg_test_01",
+  "start_time": "2026-11-04T10:10:00Z",
+  "end_time": "2026-11-04T10:10:12Z",
+  "model": "gpt-4o",
+  "total_tokens": 1450,
+  "total_latency_seconds": 1.12,
+  "turns": [
+    {
+      "turn": 1,
+      "user_message": "Multiply 12 by 8",
+      "assistant_response": "I see you want to multiply 12 and 8. Would you like me to proceed?",
+      "tool_calls": [
+        {
+          "name": "update_state",
+          "arguments": {
+            "first_number": 12,
+            "second_number": 8,
+            "operation": "mul"
+          }
+        }
+      ],
+      "latency_seconds": 0.52,
+      "usage": {
+        "prompt_tokens": 1150,
+        "completion_tokens": 30,
+        "total_tokens": 1180
+      },
+      "model": "gpt-4o"
+    },
+    {
+      "turn": 2,
+      "user_message": "Yes, proceed.",
+      "assistant_response": "The result of multiplying 12 by 8 is 96.",
+      "tool_calls": [
+        {
+          "name": "multiply_numbers",
+          "arguments": {
+            "num1": 12,
+            "num2": 8
+          }
+        }
+      ],
+      "latency_seconds": 0.6,
+      "usage": {
+        "prompt_tokens": 240,
+        "completion_tokens": 30,
+        "total_tokens": 270
+      },
+      "model": "gpt-4o"
+    }
+  ]
+}

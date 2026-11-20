@@ -799,11 +799,11 @@ export function PromptEvaluationView({
               fontWeight: 700,
               textTransform: 'uppercase',
               letterSpacing: '0.04em',
-              backgroundColor: 'var(--intent-primary-subtle)',
-              color: 'var(--intent-primary)',
+              backgroundColor: 'transparent',
+              color: 'var(--text-secondary)',
               padding: '2px 6px',
               borderRadius: 'var(--radius-xs)',
-              border: '1px solid var(--border-subtle)',
+              border: '1px solid var(--border-default)',
             }}
           >
             {systemPrompts.length} Prompts Benchmark
@@ -814,13 +814,13 @@ export function PromptEvaluationView({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 'var(--space-1)',
-              backgroundColor: 'var(--intent-success-subtle)',
-              border: '1px solid var(--intent-success-border)',
+              backgroundColor: 'transparent',
+              border: '1px solid var(--border-default)',
               borderRadius: 'var(--radius-xs)',
               padding: '2px 6px',
             }}
           >
-            <span style={{ fontSize: '10px', color: 'var(--intent-success)', fontWeight: 700 }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>
               Judge:
             </span>
             <select
@@ -829,7 +829,7 @@ export function PromptEvaluationView({
               style={{
                 backgroundColor: 'transparent',
                 border: 'none',
-                color: 'var(--intent-success)',
+                color: 'var(--text-primary)',
                 fontSize: '10px',
                 fontWeight: 600,
                 outline: 'none',
@@ -846,11 +846,12 @@ export function PromptEvaluationView({
 
           {evalData?.results && (
             <span
+              className="tabular-nums"
               style={{
                 fontSize: '10px',
                 fontWeight: 600,
-                backgroundColor: 'var(--intent-warning-subtle)',
-                color: 'var(--intent-warning)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-secondary)',
                 padding: '2px 6px',
                 borderRadius: 'var(--radius-xs)',
                 border: '1px solid var(--border-subtle)',
@@ -861,14 +862,15 @@ export function PromptEvaluationView({
           )}
           {cumulativeSpend > 0 && (
             <span
+              className="tabular-nums"
               style={{
                 fontSize: '10px',
                 fontWeight: 600,
-                backgroundColor: 'var(--intent-success-subtle)',
-                color: 'var(--intent-success)',
+                backgroundColor: 'transparent',
+                color: 'var(--text-secondary)',
                 padding: '2px 6px',
                 borderRadius: 'var(--radius-xs)',
-                border: '1px solid var(--intent-success-border)',
+                border: '1px solid var(--border-subtle)',
               }}
             >
               Session: ${cumulativeSpend.toFixed(5)}

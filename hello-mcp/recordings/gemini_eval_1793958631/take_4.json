@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 1022,
+    "prompt_tokens": 999,
+    "completion_tokens": 23
+  },
+  "turn_id": "gemini_eval_1793958631_take_4",
+  "timestamp": "2026-11-06T09:50:39.000Z",
+  "session_id": "gemini_eval_1793958631",
+  "take_label": "TAKE #4",
+  "tool_calls": [],
+  "take_number": 4,
+  "turn_number": 4,
+  "input_tokens": 999,
+  "total_tokens": 1022,
+  "user_message": "YESW",
+  "output_tokens": 23,
+  "prompt_tokens": 999,
+  "inference_time": 3.391,
+  "latency_seconds": 3.391,
+  "recording_title": "recording 3(  gemini)",
+  "recording_number": 3,
+  "completion_tokens": 23,
+  "assistant_response": "Hello! I'm MathRouter, your premium calculator agent. What math problem can I help you with today?"
+}

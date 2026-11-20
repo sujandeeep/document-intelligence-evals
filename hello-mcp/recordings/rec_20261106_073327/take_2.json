@@ -1,0 +1,30 @@
+{
+  "turn_id": "rec_20261106_073327_take_2",
+  "session_id": "rec_20261106_073327",
+  "recording_title": "RECORDING 9",
+  "recording_number": 9,
+  "take_number": 2,
+  "turn_number": 2,
+  "take_label": "TAKE #2",
+  "timestamp": "2026-11-06T07:33:34.855Z",
+  "user_message": "YES",
+  "assistant_response": "The result of subtracting 45 from 100 is 55. If you have another calculation in mind, feel free to let me know!",
+  "tool_calls": [
+    {
+      "summary": "--- [4. TOOL CALL RESULT] ---\n[sub - sub_numbers Started] args:\\n{\n  \"num1\": 100,\n  \"num2\": 45\n}\n[sub - sub_numbers Output] \\n55.0"
+    }
+  ],
+  "latency_seconds": 3.272,
+  "usage": {
+    "prompt_tokens": 1985,
+    "completion_tokens": 30,
+    "total_tokens": 2015
+  },
+  "model": "gpt-4o",
+  "inference_time": 3.272,
+  "prompt_tokens": 1985,
+  "input_tokens": 1985,
+  "completion_tokens": 30,
+  "output_tokens": 30,
+  "total_tokens": 2015
+}

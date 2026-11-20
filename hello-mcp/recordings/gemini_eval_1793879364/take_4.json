@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 113,
+    "prompt_tokens": 39,
+    "completion_tokens": 74
+  },
+  "turn_id": "gemini_eval_1793879364_take_4",
+  "timestamp": "2026-11-05T11:49:33.000Z",
+  "session_id": "gemini_eval_1793879364",
+  "take_label": "TAKE #4",
+  "tool_calls": [],
+  "take_number": 4,
+  "turn_number": 4,
+  "input_tokens": 39,
+  "total_tokens": 113,
+  "user_message": "yes",
+  "output_tokens": 74,
+  "prompt_tokens": 39,
+  "inference_time": 1.569,
+  "latency_seconds": 1.569,
+  "recording_title": "recording 1(  gemini)",
+  "recording_number": 1,
+  "completion_tokens": 74,
+  "assistant_response": "Hey there! MathRouter here.\n\n\"Yes\" is a great affirmative, but it doesn't give me a math problem to solve for you! \ud83d\ude0a\n\nIf you have a calculation, an equation, or any kind of math question, just type it out, and I'll be happy to help you work through it. What's on your mind?"
+}

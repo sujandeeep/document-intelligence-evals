@@ -1,0 +1,30 @@
+{
+  "turn_id": "rec_20261106_073327_take_3",
+  "session_id": "rec_20261106_073327",
+  "recording_title": "RECORDING 9",
+  "recording_number": 9,
+  "take_number": 3,
+  "turn_number": 3,
+  "take_label": "TAKE #3",
+  "timestamp": "2026-11-06T07:33:40.456Z",
+  "user_message": "ADD 2",
+  "assistant_response": "I see you want to add 2 to 55. Should I go ahead?",
+  "tool_calls": [
+    {
+      "summary": "--- [4. TOOL CALL RESULT] ---\n[Internal Tool - update_state Started] args:\\n{\n  \"action\": \"update\",\n  \"first_number\": 55,\n  \"operation\": \"add\",\n  \"second_number\": 2\n}\n[Internal Tool - update_state Output] \\nCurrent Session State: first_number=55, operation=add, second_number=2"
+    }
+  ],
+  "latency_seconds": 1.96,
+  "usage": {
+    "prompt_tokens": 2016,
+    "completion_tokens": 18,
+    "total_tokens": 2034
+  },
+  "model": "gpt-4o",
+  "inference_time": 1.96,
+  "prompt_tokens": 2016,
+  "input_tokens": 2016,
+  "completion_tokens": 18,
+  "output_tokens": 18,
+  "total_tokens": 2034
+}

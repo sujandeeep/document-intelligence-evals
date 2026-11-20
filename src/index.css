@@ -377,3 +377,88 @@ html, body, #root {
   background-color: var(--intent-primary);
   opacity: 0.8;
 }
+
+/* ==========================================================================
+   Restrained Enterprise Markdown Prose (Section 7)
+   ========================================================================== */
+.markdown-prose {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.markdown-prose p {
+  margin: 0 0 var(--space-2) 0;
+}
+
+.markdown-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-prose h1, .markdown-prose h2, .markdown-prose h3, .markdown-prose h4 {
+  color: var(--text-primary);
+  font-weight: 600;
+  margin: var(--space-3) 0 var(--space-1) 0;
+}
+
+.markdown-prose h1 { font-size: 14px; }
+.markdown-prose h2 { font-size: 13px; }
+.markdown-prose h3 { font-size: 12px; }
+
+.markdown-prose ul, .markdown-prose ol {
+  margin: 0 0 var(--space-2) 0;
+  padding-left: var(--space-4);
+}
+
+.markdown-prose li {
+  margin-bottom: var(--space-1);
+}
+
+.markdown-prose code {
+  font-family: monospace;
+  font-size: 11px;
+  background-color: var(--surface-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 1px 4px;
+}
+
+.markdown-prose pre {
+  background-color: var(--surface-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  overflow-x: auto;
+  margin: var(--space-2) 0;
+}
+
+.markdown-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.markdown-prose blockquote {
+  border-left: 3px solid var(--intent-primary);
+  margin: var(--space-2) 0;
+  padding-left: var(--space-3);
+  color: var(--text-secondary);
+}
+
+.markdown-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-2) 0;
+}
+
+.markdown-prose th, .markdown-prose td {
+  border: 1px solid var(--border-default);
+  padding: var(--space-1) var(--space-2);
+  text-align: left;
+  font-size: 11px;
+}
+
+.markdown-prose th {
+  background-color: var(--surface-muted);
+  font-weight: 600;
+}

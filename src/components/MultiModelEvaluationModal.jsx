@@ -878,10 +878,10 @@ export function MultiModelEvaluationModal({
               {evalData.winner && (
                 <div
                   style={{
-                    padding: '16px 20px',
-                    backgroundColor: isLight ? '#ecfdf5' : '#064e3b',
-                    borderRadius: '8px',
-                    border: '1.5px solid #10b981',
+                    padding: '14px 18px',
+                    backgroundColor: 'var(--surface-muted)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-default)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -889,35 +889,36 @@ export function MultiModelEvaluationModal({
                 >
                   <div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Award size={20} color="#10b981" />
-                      <span style={{ fontSize: '15px', fontWeight: 800, color: isLight ? '#065f46' : '#ecfdf5' }}>
+                      <Award size={18} style={{ color: 'var(--text-secondary)' }} />
+                      <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)' }}>
                         WINNER MODEL: {evalData.winner.model_id.toUpperCase()}
                       </span>
                       <span
                         style={{
                           fontSize: '11px',
-                          backgroundColor: isLight ? '#d1fae5' : '#047857',
-                          color: isLight ? '#065f46' : '#a7f3d0',
+                          backgroundColor: 'transparent',
+                          color: 'var(--text-secondary)',
+                          border: '1px solid var(--border-default)',
                           padding: '2px 8px',
-                          borderRadius: '12px',
-                          fontWeight: 600,
+                          borderRadius: 'var(--radius-xs)',
+                          fontWeight: 500,
                         }}
                       >
                         Pareto Optimal Choice
                       </span>
                     </div>
-                    <div style={{ fontSize: '11px', color: isLight ? '#047857' : '#a7f3d0', marginTop: '4px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px' }}>
                       {evalData.intersection_point?.rationale}
                     </div>
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '12px', color: isLight ? '#065f46' : '#ecfdf5' }}>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }} className="tabular-nums">
                       Score: <strong>{evalData.winner.quality_score}%</strong> • Winner Cost:{' '}
                       <strong>${evalData.winner.total_cost.toFixed(5)}</strong>
                     </div>
-                    <div style={{ fontSize: '11px', color: '#10b981', fontWeight: 700, marginTop: '2px' }}>
-                      💰 Total Benchmark Spend: ${evalData.results ? evalData.results.reduce((acc, r) => acc + (r.total_cost || 0), 0).toFixed(5) : '0.00000'} USD
+                    <div className="tabular-nums" style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500, marginTop: '2px' }}>
+                      Total Benchmark Spend: ${evalData.results ? evalData.results.reduce((acc, r) => acc + (r.total_cost || 0), 0).toFixed(5) : '0.00000'} USD
                     </div>
                     <div style={{ fontSize: '10px', color: isLight ? '#059669' : '#6ee7b7' }}>Latency: {evalData.winner.latency}s</div>
                   </div>
@@ -1051,10 +1052,11 @@ export function MultiModelEvaluationModal({
                                     style={{
                                       marginLeft: '6px',
                                       fontSize: '9px',
-                                      backgroundColor: '#10b981',
-                                      color: '#ffffff',
+                                      backgroundColor: 'transparent',
+                                      color: 'var(--text-secondary)',
+                                      border: '1px solid var(--border-default)',
                                       padding: '1px 5px',
-                                      borderRadius: '8px',
+                                      borderRadius: 'var(--radius-xs)',
                                     }}
                                   >
                                     WINNER
@@ -1066,14 +1068,11 @@ export function MultiModelEvaluationModal({
                                   style={{
                                     fontSize: '10px',
                                     padding: '2px 6px',
-                                    borderRadius: '4px',
-                                    backgroundColor: isSuccess
-                                      ? isLight ? '#dcfce7' : '#064e3b'
-                                      : isLight ? '#fee2e2' : '#450a0a',
-                                    color: isSuccess
-                                      ? isLight ? '#15803d' : '#34d399'
-                                      : isLight ? '#b91c1c' : '#f87171',
-                                    fontWeight: 600,
+                                    borderRadius: 'var(--radius-xs)',
+                                    backgroundColor: 'transparent',
+                                    border: '1px solid var(--border-subtle)',
+                                    color: isSuccess ? 'var(--text-primary)' : 'var(--text-muted)',
+                                    fontWeight: 500,
                                   }}
                                 >
                                   {isSuccess ? 'Active' : r.status.toUpperCase()}

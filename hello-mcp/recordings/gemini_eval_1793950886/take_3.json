@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 198,
+    "prompt_tokens": 152,
+    "completion_tokens": 46
+  },
+  "turn_id": "gemini_eval_1793950886_take_3",
+  "timestamp": "2026-11-06T07:41:31.000Z",
+  "session_id": "gemini_eval_1793950886",
+  "take_label": "TAKE #3",
+  "tool_calls": [],
+  "take_number": 3,
+  "turn_number": 3,
+  "input_tokens": 152,
+  "total_tokens": 198,
+  "user_message": "WHATS YOUR NAME?",
+  "output_tokens": 46,
+  "prompt_tokens": 152,
+  "inference_time": 1.601,
+  "latency_seconds": 1.601,
+  "recording_title": "recording 2(  gemini)",
+  "recording_number": 2,
+  "completion_tokens": 46,
+  "assistant_response": "Oh, hello there! It's so lovely to meet you! My name is MathRouter, and I'm absolutely delighted to help you navigate through any math challenges you might have. What can I do for you today?"
+}

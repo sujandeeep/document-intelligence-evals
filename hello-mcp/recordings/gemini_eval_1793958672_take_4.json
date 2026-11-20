@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 1149,
+    "prompt_tokens": 1105,
+    "completion_tokens": 44
+  },
+  "turn_id": "gemini_eval_1793958672_take_4",
+  "timestamp": "2026-11-06T09:51:19.000Z",
+  "session_id": "gemini_eval_1793958672",
+  "take_label": "TAKE #4",
+  "tool_calls": [],
+  "take_number": 4,
+  "turn_number": 4,
+  "input_tokens": 1105,
+  "total_tokens": 1149,
+  "user_message": "YES",
+  "output_tokens": 44,
+  "prompt_tokens": 1105,
+  "inference_time": 1.828,
+  "latency_seconds": 1.828,
+  "recording_title": "recording 4(  gemini)",
+  "recording_number": 4,
+  "completion_tokens": 44,
+  "assistant_response": "Alright, let's get that calculation done for you!\n\nThe final price of the jacket after the discount is 161.\n\nIf you have another calculation in mind, feel free to let me know!"
+}

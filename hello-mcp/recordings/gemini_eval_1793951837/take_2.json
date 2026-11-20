@@ -1,0 +1,26 @@
+{
+  "model": "gemini-2.5-flash",
+  "usage": {
+    "total_tokens": 312,
+    "prompt_tokens": 228,
+    "completion_tokens": 84
+  },
+  "turn_id": "gemini_eval_1793951837_take_2",
+  "timestamp": "2026-11-06T07:57:20.000Z",
+  "session_id": "gemini_eval_1793951837",
+  "take_label": "TAKE #2",
+  "tool_calls": [],
+  "take_number": 2,
+  "turn_number": 2,
+  "input_tokens": 228,
+  "total_tokens": 312,
+  "user_message": "YES",
+  "output_tokens": 84,
+  "prompt_tokens": 228,
+  "inference_time": 1.735,
+  "latency_seconds": 1.735,
+  "recording_title": "recording 2(  gemini)",
+  "recording_number": 2,
+  "completion_tokens": 84,
+  "assistant_response": "Alrighty, let's get this addition done!\n\nI'm simulating the server_add tool right here, adding 99 and 101 for you. And the result of that calculation is a nice, round 200.\n\nSo, 99 plus 101 equals 200. If you have another calculation in mind, feel free to let me know!"
+}
