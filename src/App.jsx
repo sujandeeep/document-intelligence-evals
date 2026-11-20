@@ -780,16 +780,30 @@ export default function App() {
     window.addEventListener('mouseup', onMouseUp);
   };
 
+  const [panel2DomainFilter, setPanel2DomainFilter] = useState('all'); // 'all' | 'mathrouter' | 'doc_intel'
+
   // Filter sessions
   const filteredRecordings = recordings.filter((r) => {
+    if (panel2DomainFilter !== 'all') {
+      const rDom = r.domain || (r.session_id.includes('20261116') || r.session_id.startsWith('doc_') ? 'doc_intel' : 'mathrouter');
+      if (rDom !== panel2DomainFilter) return false;
+    }
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
       (r.recording_title && r.recording_title.toLowerCase().includes(q)) ||
       (r.session_id && r.session_id.toLowerCase().includes(q)) ||
-      (r.model && r.model.toLowerCase().includes(q))
+      (r.model && r.model.toLowerCase().includes(q)) ||
+      (r.domain && r.domain.toLowerCase().includes(q))
     );
   });
+
+  // Automatically fetch comparison data when on Evals tab and activeSession changes
+  useEffect(() => {
+    if (activeNav === 'evals' && activeSession?.session_id) {
+      fetchComparisonData(activeSession.session_id);
+    }
+  }, [activeNav, activeSession?.session_id]);
 
   const activeSession = recordings.find((r) => r.session_id === selectedSessionId) || recordings[0];
   const currentModelVariant = selectedModelBySession[activeSession?.session_id] || 'gpt';
@@ -1423,14 +1437,60 @@ export default function App() {
                     className="tabular-nums"
                     style={{
                       fontSize: '10px',
-                      backgroundColor: 'rgba(56, 189, 248, 0.15)',
-                      padding: '1px 5px',
-                      borderRadius: 'var(--radius-xs)',
-                      color: '#0284c7',
-                      fontWeight: 600,
+                      color: 'var(--text-muted)',
+                      fontWeight: 500,
                     }}
                   >
                     10
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Nav: Multi-Model Evals */}
+            <div
+              id="nav-multi-model-evals"
+              onClick={() => setActiveNav('multi-model-evals')}
+              style={{
+                height: '34px',
+                display: 'flex',
+                alignItems: 'center',
+                padding: '0 18px',
+                gap: '12px',
+                borderLeft:
+                  activeNav === 'multi-model-evals'
+                    ? '3px solid var(--intent-primary)'
+                    : '3px solid transparent',
+                backgroundColor:
+                  activeNav === 'multi-model-evals' ? 'var(--surface-selected)' : 'transparent',
+                color:
+                  activeNav === 'multi-model-evals' ? 'var(--intent-primary)' : 'var(--text-secondary)',
+                cursor: 'pointer',
+              }}
+              title="Multi-Model Evals: Cross-Model Benchmark, Pareto Frontier & Client PDF"
+            >
+              <Cpu size={15} />
+              {isWide && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span style={{ fontSize: '12px', fontWeight: activeNav === 'multi-model-evals' ? 600 : 500 }}>
+                    Multi-Model Evals
+                  </span>
+                  <span
+                    className="tabular-nums"
+                    style={{
+                      fontSize: '10px',
+                      color: 'var(--text-muted)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    6 Models
                   </span>
                 </div>
               )}
@@ -1699,14 +1759,60 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Panel 2 Search */}
+                {/* Panel 2 Domain Filter & Search Bar */}
                 <div
                   style={{
                     padding: '6px var(--space-3)',
                     borderBottom: '1px solid var(--border-subtle)',
                     backgroundColor: 'var(--surface-muted)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
                   }}
                 >
+                  {/* Domain Filter Pills */}
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    {[
+                      { id: 'all', label: 'All', count: recordings.length },
+                      {
+                        id: 'mathrouter',
+                        label: 'MathRouter',
+                        count: recordings.filter((r) => r.domain !== 'doc_intel' && !r.session_id.includes('20261116') && !r.session_id.startsWith('doc_')).length,
+                      },
+                      {
+                        id: 'doc_intel',
+                        label: 'Doc Intel',
+                        count: recordings.filter((r) => r.domain === 'doc_intel' || r.session_id.includes('20261116') || r.session_id.startsWith('doc_')).length,
+                      },
+                    ].map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setPanel2DomainFilter(tab.id)}
+                        style={{
+                          flex: 1,
+                          height: '24px',
+                          fontSize: '11px',
+                          fontWeight: panel2DomainFilter === tab.id ? 600 : 500,
+                          backgroundColor: panel2DomainFilter === tab.id ? 'var(--surface-base)' : 'transparent',
+                          border: panel2DomainFilter === tab.id ? '1px solid var(--border-default)' : '1px solid transparent',
+                          borderRadius: 'var(--radius-xs)',
+                          color: panel2DomainFilter === tab.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <span>{tab.label}</span>
+                        <span className="tabular-nums" style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          ({tab.count})
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+
                   <div
                     style={{
                       display: 'flex',
@@ -1753,14 +1859,14 @@ export default function App() {
                   ) : (
                     filteredRecordings.map((rec, index) => {
                       const isSelected = rec.session_id === selectedSessionId;
+                      const isDoc = rec.domain === 'doc_intel' || rec.session_id.includes('20261116') || rec.session_id.startsWith('doc_');
                       const displayTime = rec.created_at
                         ? new Date(rec.created_at).toLocaleTimeString([], {
                             hour: '2-digit',
                             minute: '2-digit',
                           })
                         : '12:00 UTC';
-                      const recNum = rec.recording_number || (index + 1);
-                      const displayTitle = `RECORDING ${recNum}`;
+                      const displayTitle = rec.recording_title || `RECORDING ${rec.recording_number || (index + 1)}`;
 
                       return (
                         <div
@@ -5171,6 +5277,25 @@ export default function App() {
               showToast={showToast}
               onSpendUpdate={(amt) => setLiveEvalSpend((prev) => prev + amt)}
             />
+          )}
+
+          {/* ====================================================================
+              VIEW: MULTI-MODEL EVALS (CROSS-MODEL BENCHMARK & PARETO FRONTIER)
+              ==================================================================== */}
+          {activeNav === 'multi-model-evals' && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+              <MultiModelEvaluationModal
+                isOpen={true}
+                onClose={() => setActiveNav('all-experiments')}
+                activeSession={activeSession}
+                selectedTurn={selectedTurn}
+                recordings={recordings}
+                showToast={showToast}
+                theme={theme}
+                onOpenPromptEvals={() => setActiveNav('prompt-evals')}
+                onSpendUpdate={(amt) => setLiveEvalSpend((prev) => prev + amt)}
+              />
+            </div>
           )}
 
           {/* ====================================================================
