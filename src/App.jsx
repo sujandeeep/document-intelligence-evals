@@ -43,6 +43,7 @@ import {
   X,
   Sliders,
   Eye,
+  Cpu,
 } from 'lucide-react';
 
 export default function App() {
@@ -76,8 +77,11 @@ export default function App() {
   const [isMultiModelModalOpen, setIsMultiModelModalOpen] = useState(false);
 
   // Database View State
-  const [dbActiveTable, setDbActiveTable] = useState('eval_turns'); // 'eval_sessions' | 'eval_turns'
+  const [dbActiveTable, setDbActiveTable] = useState('rag_evaluations'); // 'rag_evaluations' | 'document_embeddings' | 'eval_turns' | 'eval_sessions'
   const [dbSearchQuery, setDbSearchQuery] = useState('');
+  const [dbRagEvals, setDbRagEvals] = useState([]);
+  const [dbDocEmbeddings, setDbDocEmbeddings] = useState([]);
+  const [isDbLoading, setIsDbLoading] = useState(false);
 
   // Interactive Live Turn Runner State
   const [userPrompt, setUserPrompt] = useState('');
@@ -383,6 +387,28 @@ export default function App() {
       console.warn('Prometheus fetch notice:', err);
     }
   }, []);
+
+  const fetchRagDbData = useCallback(async () => {
+    setIsDbLoading(true);
+    try {
+      const [evalsRes, docsRes] = await Promise.all([
+        fetch('/api/evaluations?limit=100'),
+        fetch('/api/db/table/document_embeddings?limit=50&offset=0')
+      ]);
+      const evalsData = await evalsRes.json();
+      const docsData = await docsRes.json();
+      setDbRagEvals(Array.isArray(evalsData) ? evalsData : []);
+      setDbDocEmbeddings(docsData.rows || []);
+    } catch (e) {
+      console.warn('RAG DB fetch notice:', e);
+    } finally {
+      setIsDbLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRagDbData();
+  }, [fetchRagDbData]);
 
   useEffect(() => {
     fetchDatabaseRecordings(true);
@@ -798,14 +824,14 @@ export default function App() {
     );
   });
 
+  const activeSession = recordings.find((r) => r.session_id === selectedSessionId) || recordings[0];
+
   // Automatically fetch comparison data when on Evals tab and activeSession changes
   useEffect(() => {
     if (activeNav === 'evals' && activeSession?.session_id) {
       fetchComparisonData(activeSession.session_id);
     }
   }, [activeNav, activeSession?.session_id]);
-
-  const activeSession = recordings.find((r) => r.session_id === selectedSessionId) || recordings[0];
   const currentModelVariant = selectedModelBySession[activeSession?.session_id] || 'gpt';
   const isGeminiVariant = currentModelVariant === 'gemini' || currentModelVariant === 'gpt5';
   const activeTakes = (isGeminiVariant && (activeSession?.gpt5_run || activeSession?.gemini_run))
@@ -836,6 +862,28 @@ export default function App() {
       (t.assistant_response && t.assistant_response.toLowerCase().includes(q)) ||
       (t.turn_id && t.turn_id.toLowerCase().includes(q)) ||
       (t.session_id && t.session_id.toLowerCase().includes(q))
+    );
+  });
+
+  const filteredRagEvals = dbRagEvals.filter((ev) => {
+    if (!dbSearchQuery) return true;
+    const q = dbSearchQuery.toLowerCase();
+    return (
+      (ev.query && ev.query.toLowerCase().includes(q)) ||
+      (ev.document_name && ev.document_name.toLowerCase().includes(q)) ||
+      (ev.model_id && ev.model_id.toLowerCase().includes(q)) ||
+      (ev.verdict && ev.verdict.toLowerCase().includes(q)) ||
+      (ev.id && String(ev.id).toLowerCase().includes(q))
+    );
+  });
+
+  const filteredDocEmbeddings = dbDocEmbeddings.filter((doc) => {
+    if (!dbSearchQuery) return true;
+    const q = dbSearchQuery.toLowerCase();
+    return (
+      (doc.document_name && doc.document_name.toLowerCase().includes(q)) ||
+      (doc.chunk_text && doc.chunk_text.toLowerCase().includes(q)) ||
+      (doc.id && String(doc.id).toLowerCase().includes(q))
     );
   });
 
@@ -1905,18 +1953,34 @@ export default function App() {
                               alignItems: 'center',
                             }}
                           >
-                            <span
-                              style={{
-                                fontSize: '13px',
-                                fontWeight: isSelected ? 600 : 500,
-                                color: 'var(--text-primary)',
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                              }}
-                            >
-                              {displayTitle}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                              <span
+                                style={{
+                                  fontSize: '13px',
+                                  fontWeight: isSelected ? 600 : 500,
+                                  color: 'var(--text-primary)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                }}
+                              >
+                                {displayTitle}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: '9px',
+                                  fontWeight: 500,
+                                  padding: '1px 4px',
+                                  borderRadius: '2px',
+                                  border: '1px solid var(--border-subtle)',
+                                  backgroundColor: 'transparent',
+                                  color: isDoc ? 'var(--intent-primary)' : 'var(--text-secondary)',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {isDoc ? 'DOC INTEL' : 'MATH MCP'}
+                              </span>
+                            </div>
                             <span
                               className="tabular-nums"
                               style={{ fontSize: '10px', color: 'var(--text-muted)' }}
@@ -5348,7 +5412,63 @@ export default function App() {
                 </div>
 
                 {/* Table Toggle Tabs */}
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDbActiveTable('rag_evaluations')}
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '11px',
+                      fontWeight: dbActiveTable === 'rag_evaluations' ? 700 : 500,
+                      backgroundColor:
+                        dbActiveTable === 'rag_evaluations'
+                          ? 'var(--intent-primary-subtle)'
+                          : 'var(--surface-muted)',
+                      border: dbActiveTable === 'rag_evaluations' ? '1px solid var(--intent-primary-border)' : '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-sm)',
+                      color:
+                        dbActiveTable === 'rag_evaluations'
+                          ? 'var(--intent-primary)'
+                          : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Activity size={13} />
+                    <span>rag_evaluations ({dbRagEvals.length || 100})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDbActiveTable('document_embeddings')}
+                    style={{
+                      height: '28px',
+                      padding: '0 12px',
+                      fontSize: '11px',
+                      fontWeight: dbActiveTable === 'document_embeddings' ? 700 : 500,
+                      backgroundColor:
+                        dbActiveTable === 'document_embeddings'
+                          ? 'var(--intent-primary-subtle)'
+                          : 'var(--surface-muted)',
+                      border: dbActiveTable === 'document_embeddings' ? '1px solid var(--intent-primary-border)' : '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-sm)',
+                      color:
+                        dbActiveTable === 'document_embeddings'
+                          ? 'var(--intent-primary)'
+                          : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px'
+                    }}
+                  >
+                    <Database size={13} />
+                    <span>document_embeddings (4,072 chunks)</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setDbActiveTable('eval_turns')}
@@ -5356,12 +5476,12 @@ export default function App() {
                       height: '28px',
                       padding: '0 12px',
                       fontSize: '11px',
-                      fontWeight: dbActiveTable === 'eval_turns' ? 600 : 500,
+                      fontWeight: dbActiveTable === 'eval_turns' ? 700 : 500,
                       backgroundColor:
                         dbActiveTable === 'eval_turns'
                           ? 'var(--intent-primary-subtle)'
                           : 'var(--surface-muted)',
-                      border: '1px solid var(--border-default)',
+                      border: dbActiveTable === 'eval_turns' ? '1px solid var(--intent-primary-border)' : '1px solid var(--border-default)',
                       borderRadius: 'var(--radius-sm)',
                       color:
                         dbActiveTable === 'eval_turns'
@@ -5380,12 +5500,12 @@ export default function App() {
                       height: '28px',
                       padding: '0 12px',
                       fontSize: '11px',
-                      fontWeight: dbActiveTable === 'eval_sessions' ? 600 : 500,
+                      fontWeight: dbActiveTable === 'eval_sessions' ? 700 : 500,
                       backgroundColor:
                         dbActiveTable === 'eval_sessions'
                           ? 'var(--intent-primary-subtle)'
                           : 'var(--surface-muted)',
-                      border: '1px solid var(--border-default)',
+                      border: dbActiveTable === 'eval_sessions' ? '1px solid var(--intent-primary-border)' : '1px solid var(--border-default)',
                       borderRadius: 'var(--radius-sm)',
                       color:
                         dbActiveTable === 'eval_sessions'
@@ -5395,6 +5515,30 @@ export default function App() {
                     }}
                   >
                     eval_sessions ({recordings.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      fetchRagDbData();
+                      fetchDatabaseRecordings(true);
+                      showToast('Refreshed all PostgreSQL tables');
+                    }}
+                    title="Refresh all database tables"
+                    style={{
+                      height: '28px',
+                      width: '28px',
+                      backgroundColor: 'var(--surface-base)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--intent-primary)',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <RefreshCw size={12} className={isDbLoading ? 'animate-spin' : ''} />
                   </button>
                 </div>
               </div>
@@ -5451,8 +5595,14 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => {
-                      const data = dbActiveTable === 'eval_turns' ? allTurns : recordings;
-                      copyToClipboard(JSON.stringify(data, null, 2), `Copied all ${dbActiveTable} JSON to clipboard`);
+                      const data = dbActiveTable === 'rag_evaluations' 
+                        ? filteredRagEvals 
+                        : dbActiveTable === 'document_embeddings' 
+                        ? filteredDocEmbeddings 
+                        : dbActiveTable === 'eval_turns' 
+                        ? filteredTurns 
+                        : recordings;
+                      copyToClipboard(JSON.stringify(data, null, 2), `Copied ${dbActiveTable} data to clipboard`);
                     }}
                     style={{
                       height: '30px',
@@ -5483,7 +5633,208 @@ export default function App() {
                     overflow: 'auto',
                   }}
                 >
-                  {dbActiveTable === 'eval_turns' ? (
+                  {dbActiveTable === 'rag_evaluations' ? (
+                    <table
+                      style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        fontSize: '12px',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            backgroundColor: 'var(--surface-muted)',
+                            borderBottom: '1px solid var(--border-default)',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 1,
+                          }}
+                        >
+                          <th style={{ padding: '8px var(--space-3)' }}>ID</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Document</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Query</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Model</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Verdict</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Faithfulness</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Latency</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredRagEvals.length === 0 ? (
+                          <tr>
+                            <td colSpan={8} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                              No evaluations found matching search criteria.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredRagEvals.map((ev) => (
+                            <tr key={ev.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                              <td
+                                className="tabular-nums"
+                                style={{
+                                  padding: '8px var(--space-3)',
+                                  fontSize: '11px',
+                                  fontFamily: 'monospace',
+                                  color: 'var(--text-muted)',
+                                }}
+                              >
+                                {ev.id}
+                              </td>
+                              <td style={{ padding: '8px var(--space-3)', fontWeight: 600, color: 'var(--intent-primary)' }}>
+                                {ev.document_name || 'Philosophy RAG'}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px var(--space-3)',
+                                  maxWidth: '280px',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                                title={ev.query}
+                              >
+                                {ev.query}
+                              </td>
+                              <td style={{ padding: '8px var(--space-3)', fontSize: '11px' }}>
+                                <span style={{ padding: '2px 6px', borderRadius: '4px', background: 'var(--surface-muted)' }}>
+                                  {ev.model_id || 'eval-judge'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '8px var(--space-3)' }}>
+                                <span
+                                  style={{
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    padding: '2px 8px',
+                                    borderRadius: '10px',
+                                    backgroundColor:
+                                      ev.verdict === 'PASS'
+                                        ? 'rgba(16, 185, 129, 0.15)'
+                                        : ev.verdict === 'BORDERLINE'
+                                        ? 'rgba(245, 158, 11, 0.15)'
+                                        : 'rgba(239, 68, 68, 0.15)',
+                                    color:
+                                      ev.verdict === 'PASS'
+                                        ? '#10b981'
+                                        : ev.verdict === 'BORDERLINE'
+                                        ? '#f59e0b'
+                                        : '#ef4444',
+                                  }}
+                                >
+                                  {ev.verdict || 'EVALUATED'}
+                                </span>
+                              </td>
+                              <td className="tabular-nums" style={{ padding: '8px var(--space-3)', fontWeight: 600 }}>
+                                {typeof ev.faithfulness_score === 'number' ? `${(ev.faithfulness_score * 100).toFixed(0)}%` : '—'}
+                              </td>
+                              <td className="tabular-nums" style={{ padding: '8px var(--space-3)', color: 'var(--text-muted)', fontSize: '11px' }}>
+                                {ev.latency_ms ? `${ev.latency_ms}ms` : '—'}
+                              </td>
+                              <td style={{ padding: '8px var(--space-3)' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveNav('rag')}
+                                  style={{
+                                    fontSize: '11px',
+                                    padding: '2px 8px',
+                                    backgroundColor: 'var(--surface-muted)',
+                                    border: '1px solid var(--border-default)',
+                                    borderRadius: 'var(--radius-xs)',
+                                    cursor: 'pointer',
+                                    color: 'var(--intent-primary)',
+                                  }}
+                                >
+                                  Open RAG Evals
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  ) : dbActiveTable === 'document_embeddings' ? (
+                    <table
+                      style={{
+                        width: '100%',
+                        borderCollapse: 'collapse',
+                        fontSize: '12px',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <thead>
+                        <tr
+                          style={{
+                            backgroundColor: 'var(--surface-muted)',
+                            borderBottom: '1px solid var(--border-default)',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 1,
+                          }}
+                        >
+                          <th style={{ padding: '8px var(--space-3)' }}>Chunk ID</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Document</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Chunk #</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Content Preview</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Dimensions</th>
+                          <th style={{ padding: '8px var(--space-3)' }}>Created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredDocEmbeddings.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                              No document chunks loaded or matching search.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredDocEmbeddings.map((chunk) => (
+                            <tr key={chunk.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                              <td
+                                className="tabular-nums"
+                                style={{
+                                  padding: '8px var(--space-3)',
+                                  fontSize: '11px',
+                                  fontFamily: 'monospace',
+                                  color: 'var(--text-muted)',
+                                }}
+                              >
+                                {chunk.id}
+                              </td>
+                              <td style={{ padding: '8px var(--space-3)', fontWeight: 600 }}>
+                                {chunk.document_name}
+                              </td>
+                              <td className="tabular-nums" style={{ padding: '8px var(--space-3)', fontSize: '11px' }}>
+                                #{chunk.chunk_index}
+                              </td>
+                              <td
+                                style={{
+                                  padding: '8px var(--space-3)',
+                                  maxWidth: '380px',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                  color: 'var(--text-secondary)',
+                                  fontSize: '11px',
+                                }}
+                                title={chunk.chunk_text}
+                              >
+                                {chunk.chunk_text || '—'}
+                              </td>
+                              <td className="tabular-nums" style={{ padding: '8px var(--space-3)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                {chunk.embedding_dim || 1536} dims
+                              </td>
+                              <td className="tabular-nums" style={{ padding: '8px var(--space-3)', fontSize: '11px', color: 'var(--text-muted)' }}>
+                                {chunk.created_at ? new Date(chunk.created_at).toLocaleDateString() : '—'}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  ) : dbActiveTable === 'eval_turns' ? (
                     <table
                       style={{
                         width: '100%',

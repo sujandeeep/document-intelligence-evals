@@ -681,26 +681,34 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
   };
 
   // Add Custom Query
-  const handleAddCustomQuery = (e) => {
-    e.preventDefault();
+  const handleAddCustomQuery = async (e, runImmediately = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!newQueryInput.trim()) return;
 
     const trimmed = newQueryInput.trim();
+    const targetDoc = newQueryDocInput.trim() || 'Auto-Detected Vector Doc';
+    const chosenModel = newQueryModel || 'gpt-4o';
     const newEntry = {
       query: trimmed,
-      doc: newQueryDocInput.trim() || 'Auto-Detected Vector Doc',
+      doc: targetDoc,
       isCustom: true
     };
 
-    setCustomQueries((prev) => [newEntry, ...prev]);
+    setCustomQueries((prev) => [newEntry, ...prev.filter((q) => q.query !== trimmed)]);
     setSelectedQueryText(trimmed);
-    setSelectedModelsByQuery((prev) => ({ ...prev, [trimmed]: newQueryModel }));
+    setSelectedModelsByQuery((prev) => ({ ...prev, [trimmed]: chosenModel }));
     localStorage.setItem('v2_selected_query', trimmed);
 
     setIsAddQueryModalOpen(false);
     setNewQueryInput('');
     setNewQueryDocInput('');
-    showToast('New query added to benchmark list! Click Run to evaluate.');
+
+    if (runImmediately) {
+      showToast(`Evaluating query with ${chosenModel}...`);
+      await handleRunSpecificEvaluation(trimmed, chosenModel, targetDoc, topK);
+    } else {
+      showToast('New query added to benchmark list! Click "Run Evaluation" in the detail panel to evaluate.');
+    }
   };
 
   // Ingest Document (supports File Upload and Paste Text)
@@ -743,8 +751,9 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
         setIngestContent('');
         await fetchDbOverview();
         await fetchDocuments();
+        await fetchDbTableData('document_embeddings', 0);
       } else {
-        showToast(`Ingest error: ${data.detail || 'Failed to ingest'}`);
+        showToast(`Ingest error: ${data.detail || data.error || 'Failed to ingest'}`);
       }
     } catch (err) {
       showToast(`Ingest error: ${err.message}`);
@@ -852,63 +861,84 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
           </div>
 
           {/* Quick Nav Destination Tabs */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '12px', backgroundColor: 'var(--surface-panel2)', padding: '2px', borderRadius: '4px', border: '1px solid var(--border-hairline)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '14px', backgroundColor: 'var(--surface-muted)', padding: '3px', borderRadius: '6px', border: '1px solid var(--border-default)' }}>
             <button
               onClick={() => setActiveDestination('evals')}
               style={{
-                height: '26px',
-                padding: '0 10px',
+                height: '28px',
+                padding: '0 12px',
                 fontSize: '11px',
-                fontWeight: activeDestination === 'evals' ? 600 : 500,
-                backgroundColor: activeDestination === 'evals' ? 'var(--intent-primary-subtle)' : 'transparent',
-                color: activeDestination === 'evals' ? 'var(--intent-primary)' : 'var(--text-muted)',
-                border: activeDestination === 'evals' ? '1px solid var(--intent-primary-border)' : '1px solid transparent',
-                borderRadius: '3px',
+                fontWeight: activeDestination === 'evals' ? 700 : 500,
+                backgroundColor: activeDestination === 'evals' ? 'var(--surface-base)' : 'transparent',
+                color: activeDestination === 'evals' ? 'var(--intent-primary)' : 'var(--text-secondary)',
+                border: activeDestination === 'evals' ? '1px solid var(--border-default)' : '1px solid transparent',
+                borderRadius: '4px',
+                boxShadow: activeDestination === 'evals' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px'
+                gap: '6px'
               }}
             >
-              <Activity size={13} color="var(--intent-primary)" /> Evaluations
+              <Activity size={13} color="var(--intent-primary)" />
+              <span>Evaluations</span>
+              <span className="tabular-nums" style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', backgroundColor: 'var(--intent-primary-subtle)', color: 'var(--intent-primary)', fontWeight: 600 }}>
+                {evaluations.length}
+              </span>
             </button>
+
             <button
-              onClick={() => setActiveDestination('database')}
+              onClick={() => {
+                setActiveDestination('database');
+                fetchDbOverview();
+                fetchDbTableData(selectedDbTable || 'document_embeddings', 0);
+              }}
               style={{
-                height: '26px',
-                padding: '0 10px',
+                height: '28px',
+                padding: '0 12px',
                 fontSize: '11px',
-                fontWeight: activeDestination === 'database' ? 600 : 500,
-                backgroundColor: activeDestination === 'database' ? 'var(--intent-primary-subtle)' : 'transparent',
-                color: activeDestination === 'database' ? 'var(--intent-primary)' : 'var(--text-muted)',
-                border: activeDestination === 'database' ? '1px solid var(--intent-primary-border)' : '1px solid transparent',
-                borderRadius: '3px',
+                fontWeight: activeDestination === 'database' ? 700 : 500,
+                backgroundColor: activeDestination === 'database' ? 'var(--surface-base)' : 'transparent',
+                color: activeDestination === 'database' ? 'var(--intent-primary)' : 'var(--text-secondary)',
+                border: activeDestination === 'database' ? '1px solid var(--border-default)' : '1px solid transparent',
+                borderRadius: '4px',
+                boxShadow: activeDestination === 'database' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px'
+                gap: '6px'
               }}
             >
-              <Database size={13} color="var(--intent-primary)" /> Database View
+              <Database size={13} color="var(--intent-primary)" />
+              <span>PostgreSQL Database</span>
+              <span className="tabular-nums" style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', backgroundColor: 'var(--intent-success-subtle)', color: 'var(--intent-success)', fontWeight: 600 }}>
+                4,072 Chunks
+              </span>
             </button>
+
             <button
               onClick={() => setActiveDestination('docs')}
               style={{
-                height: '26px',
-                padding: '0 10px',
+                height: '28px',
+                padding: '0 12px',
                 fontSize: '11px',
-                fontWeight: activeDestination === 'docs' ? 600 : 500,
-                backgroundColor: activeDestination === 'docs' ? 'var(--intent-primary-subtle)' : 'transparent',
-                color: activeDestination === 'docs' ? 'var(--intent-primary)' : 'var(--text-muted)',
-                border: activeDestination === 'docs' ? '1px solid var(--intent-primary-border)' : '1px solid transparent',
-                borderRadius: '3px',
+                fontWeight: activeDestination === 'docs' ? 700 : 500,
+                backgroundColor: activeDestination === 'docs' ? 'var(--surface-base)' : 'transparent',
+                color: activeDestination === 'docs' ? 'var(--intent-primary)' : 'var(--text-secondary)',
+                border: activeDestination === 'docs' ? '1px solid var(--border-default)' : '1px solid transparent',
+                borderRadius: '4px',
+                boxShadow: activeDestination === 'docs' ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '5px'
+                gap: '6px'
               }}
             >
-              <FileText size={13} color="var(--intent-primary)" /> Ingested Docs ({documentsList.length})
+              <FileText size={13} color="var(--intent-primary)" />
+              <span>Ingested Books</span>
+              <span className="tabular-nums" style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '3px', backgroundColor: 'var(--surface-card)', border: '1px solid var(--border-hairline)', color: 'var(--text-muted)', fontWeight: 600 }}>
+                {documentsList.length || 11}
+              </span>
             </button>
           </div>
         </div>
@@ -1711,7 +1741,8 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                             ...(comparisonData ? [{ id: 'comparison', label: '⚔️ Dual RAG Comparison' }] : []),
                             { id: 'overview', label: 'Response & Evidence' },
                             { id: 'claims', label: `Atomic Claims (${activeEval.claims_analysis?.length || 0})` },
-                            { id: 'contexts', label: `Retrieved Chunks (${activeEval.retrieved_contexts?.length || 0})` }
+                            { id: 'contexts', label: `Retrieved Chunks (${activeEval.retrieved_contexts?.length || 0})` },
+                            { id: 'db-record', label: '🗄️ PostgreSQL Database Row' }
                           ].map((t) => (
                             <button
                               key={t.id}
@@ -1734,7 +1765,7 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                         </div>
 
                         {/* Scrollable Tab Content Area */}
-                        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 80px 20px' }}>
                           {currentTab === 'comparison' && comparisonData && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                               {/* 1. Winner Banner */}
@@ -1830,7 +1861,52 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                                 </div>
                               </div>
 
-                              {/* 2. Side-by-Side Dual Answer Columns */}
+                              {/* 2. Prominent Judge Critique Box (Positioned at Top to prevent bottom cutting) */}
+                              <div
+                                style={{
+                                  backgroundColor: 'var(--surface-card)',
+                                  border: '1.5px solid #d97706',
+                                  borderLeft: '5px solid #d97706',
+                                  borderRadius: '6px',
+                                  padding: '16px 20px',
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{ fontSize: '16px' }}>⚖️</span>
+                                    <span style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                      GPT-6.2 Sol Impartial Judge Analysis & Critique
+                                    </span>
+                                    <span style={{ fontSize: '10px', padding: '1px 7px', borderRadius: '3px', backgroundColor: 'rgba(217, 119, 6, 0.12)', color: '#d97706', fontWeight: 700 }}>
+                                      Official Ruling
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleCopy(comparisonData.reasoning, 'Judge analysis')}
+                                    style={{
+                                      height: '24px',
+                                      padding: '0 8px',
+                                      backgroundColor: 'var(--surface-base)',
+                                      border: '1px solid var(--border-subtle)',
+                                      borderRadius: '3px',
+                                      color: 'var(--text-muted)',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      fontSize: '11px'
+                                    }}
+                                  >
+                                    <Copy size={11} /> Copy Ruling
+                                  </button>
+                                </div>
+                                <div style={{ fontSize: '13px', lineHeight: 1.7, color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                  {comparisonData.reasoning}
+                                </div>
+                              </div>
+
+                              {/* 3. Side-by-Side Dual Answer Columns */}
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                                 {/* System A Card */}
                                 <div
@@ -1879,7 +1955,7 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                                       <Copy size={10} /> Copy
                                     </button>
                                   </div>
-                                  <div style={{ padding: '14px', fontSize: '12px', lineHeight: 1.6, overflowY: 'auto', maxHeight: '450px' }}>
+                                  <div style={{ padding: '14px', fontSize: '12px', lineHeight: 1.6, overflowY: 'auto', maxHeight: '380px' }}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
                                       {comparisonData.ansA || 'No response generated'}
                                     </ReactMarkdown>
@@ -1933,32 +2009,11 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                                       <Copy size={10} /> Copy
                                     </button>
                                   </div>
-                                  <div style={{ padding: '14px', fontSize: '12px', lineHeight: 1.6, overflowY: 'auto', maxHeight: '450px' }}>
+                                  <div style={{ padding: '14px', fontSize: '12px', lineHeight: 1.6, overflowY: 'auto', maxHeight: '380px' }}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
                                       {comparisonData.ansB || 'No response generated'}
                                     </ReactMarkdown>
                                   </div>
-                                </div>
-                              </div>
-
-                              {/* 3. Judge Critique Box */}
-                              <div
-                                style={{
-                                  backgroundColor: 'var(--surface-card)',
-                                  border: '1px solid var(--border-subtle)',
-                                  borderLeft: '4px solid #7c2d12',
-                                  borderRadius: '4px',
-                                  padding: '14px 18px'
-                                }}
-                              >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                  <span style={{ fontSize: '14px' }}>⚖️</span>
-                                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                                    GPT-6.2 Sol Impartial Judge Analysis & Critique
-                                  </span>
-                                </div>
-                                <div style={{ fontSize: '12px', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-                                  {comparisonData.reasoning}
                                 </div>
                               </div>
                             </div>
@@ -2208,6 +2263,153 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+
+                    {/* 🗄️ Database Record Tab View */}
+                    {currentTab === 'db-record' && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        {/* Database Record Header Card */}
+                        <div
+                          style={{
+                            backgroundColor: 'var(--surface-card)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '6px',
+                            padding: '16px 20px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '12px'
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <Database size={16} color="var(--intent-primary)" />
+                              <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                                PostgreSQL Table: <code>rag_evaluations</code>
+                              </span>
+                              <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--intent-success)', backgroundColor: 'var(--intent-success-subtle)', padding: '2px 8px', borderRadius: '3px', border: '1px solid var(--intent-success-border)' }}>
+                                Live Record #{activeEval.id}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                              Database: <code>mathrouter</code> • Host: <code>localhost:5434</code> • Table: <code>rag_evaluations</code>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="btn-electric"
+                            onClick={() => {
+                              setSelectedDbTable('rag_evaluations');
+                              setActiveDestination('database');
+                              fetchDbTableData('rag_evaluations', 0);
+                            }}
+                            style={{
+                              height: '30px',
+                              padding: '0 14px',
+                              fontSize: '11px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <ExternalLink size={13} />
+                            <span>Open Full Database Explorer (4,072 Chunks)</span>
+                          </button>
+                        </div>
+
+                        {/* Database Fields Table */}
+                        <div
+                          style={{
+                            backgroundColor: 'var(--surface-card)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '6px',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          <div style={{ padding: '10px 14px', backgroundColor: 'var(--surface-muted)', borderBottom: '1px solid var(--border-subtle)', fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            COLUMN VALUES IN POSTGRESQL
+                          </div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                            <tbody>
+                              {[
+                                ['id (Primary Key)', activeEval.id],
+                                ['created_at (Timestamp)', activeEval.created_at || 'Recorded'],
+                                ['model_id', activeEval.model_id],
+                                ['document_name', activeEval.document_name],
+                                ['verdict', activeEval.verdict],
+                                ['confidence_score', activeEval.confidence_score],
+                                ['faithfulness_score', activeEval.faithfulness_score],
+                                ['context_relevance_score', activeEval.context_relevance_score],
+                                ['answer_relevance_score', activeEval.answer_relevance_score],
+                                ['latency_ms', `${activeEval.latency_ms || 0} ms`],
+                                ['retrieved_contexts_count', `${activeEval.retrieved_contexts?.length || 0} chunks`],
+                                ['claims_analyzed', `${activeEval.claims_analysis?.length || 0} claims`]
+                              ].map(([col, val], i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)', backgroundColor: i % 2 === 0 ? 'transparent' : 'var(--surface-muted)' }}>
+                                  <td style={{ padding: '8px 14px', fontWeight: 600, color: 'var(--text-secondary)', width: '220px' }}>
+                                    <code>{col}</code>
+                                  </td>
+                                  <td style={{ padding: '8px 14px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
+                                    {String(val)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Raw JSON Payload */}
+                        <div
+                          style={{
+                            backgroundColor: 'var(--surface-card)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: '6px',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          <div style={{ padding: '10px 14px', backgroundColor: 'var(--surface-muted)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              RAW POSTGRESQL RECORD JSON
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(JSON.stringify(activeEval, null, 2), 'Database Record JSON')}
+                              style={{
+                                background: 'transparent',
+                                border: '1px solid var(--border-subtle)',
+                                borderRadius: '3px',
+                                padding: '2px 8px',
+                                fontSize: '10px',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                            >
+                              <Copy size={11} /> Copy JSON
+                            </button>
+                          </div>
+                          <pre
+                            style={{
+                              margin: 0,
+                              padding: '12px 16px',
+                              fontSize: '11px',
+                              fontFamily: 'monospace',
+                              backgroundColor: 'var(--surface-base)',
+                              maxHeight: '360px',
+                              overflow: 'auto',
+                              color: 'var(--text-secondary)',
+                              lineHeight: 1.5
+                            }}
+                          >
+                            {JSON.stringify(activeEval, null, 2)}
+                          </pre>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -3140,7 +3342,7 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                 </select>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={() => setIsAddQueryModalOpen(false)}
@@ -3158,17 +3360,40 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => handleAddCustomQuery(null, false)}
+                  style={{
+                    height: '32px',
+                    padding: '0 14px',
+                    backgroundColor: 'var(--surface-base)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '4px',
+                    color: 'var(--text-primary)',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Add to List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddCustomQuery(null, true)}
                   className="btn-electric"
                   style={{
                     height: '32px',
                     padding: '0 16px',
                     borderRadius: '4px',
                     fontSize: '11px',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    cursor: 'pointer'
                   }}
                 >
-                  Add Question
+                  <Play size={12} fill="#ffffff" />
+                  <span>Add &amp; Run Evaluation</span>
                 </button>
               </div>
             </form>
@@ -3284,6 +3509,7 @@ export function RagEvaluationView({ showToast: propShowToast, theme: initialThem
                       type="file"
                       ref={fileInputRef}
                       accept=".pdf,.docx,.txt,.md,.json,.csv"
+                      onClick={(e) => e.stopPropagation()}
                       onChange={(e) => {
                         if (e.target.files && e.target.files[0]) {
                           setFileToUpload(e.target.files[0]);

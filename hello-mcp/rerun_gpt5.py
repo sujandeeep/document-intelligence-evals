@@ -91,6 +91,12 @@ def rerun_session_with_gpt5(source_session_id=None, recording_title=None, record
             for f in sorted(os.listdir(sdir)):
                 if f.endswith(".json"):
                     candidates.append(os.path.join(sdir, f))
+        elif source_session_id and os.path.exists(RECORDINGS_DIR):
+            for root, _, files in os.walk(RECORDINGS_DIR):
+                for f in sorted(files):
+                    if f.endswith(".json") and (f.startswith(source_session_id) or source_session_id in f):
+                        if not f.startswith("gpt5_") and not f.startswith("gemini_") and not f.startswith("modelb_"):
+                            candidates.append(os.path.join(root, f))
         elif os.path.exists(RECORDINGS_DIR):
             for root, _, files in os.walk(RECORDINGS_DIR):
                 for f in sorted(files):
@@ -101,13 +107,23 @@ def rerun_session_with_gpt5(source_session_id=None, recording_title=None, record
             try:
                 with open(cf, "r", encoding="utf-8") as f:
                     jdata = json.load(f)
-                    u_msg = jdata.get("user_message") or jdata.get("user") or jdata.get("prompt")
-                    a_res = jdata.get("assistant_response") or jdata.get("assistant") or jdata.get("response")
-                    lat = jdata.get("latency_seconds") or jdata.get("inference_time") or 0.0
-                    tok = jdata.get("total_tokens") or 0
-                    payload = jdata.get("payload") or {}
-                    if u_msg:
-                        rows.append((f"json_turn_{idx}", "json_source", idx, u_msg, a_res, lat, tok, [], payload))
+                    if "takes" in jdata and isinstance(jdata["takes"], list) and len(jdata["takes"]) > 0:
+                        for t_idx, t in enumerate(jdata["takes"], start=1):
+                            t_u = t.get("user_message") or t.get("preview") or t.get("prompt")
+                            t_a = t.get("assistant_response") or t.get("answer") or ""
+                            t_lat = t.get("latency_seconds") or t.get("inference_time") or 0.0
+                            t_tok = t.get("total_tokens") or 0
+                            t_pay = t.get("payload") or {}
+                            if t_u:
+                                rows.append((f"json_turn_{len(rows)+1}", source_session_id or "json_source", len(rows)+1, t_u, t_a, t_lat, t_tok, [], t_pay))
+                    else:
+                        u_msg = jdata.get("user_message") or jdata.get("user") or jdata.get("prompt")
+                        a_res = jdata.get("assistant_response") or jdata.get("assistant") or jdata.get("response")
+                        lat = jdata.get("latency_seconds") or jdata.get("inference_time") or 0.0
+                        tok = jdata.get("total_tokens") or 0
+                        payload = jdata.get("payload") or {}
+                        if u_msg:
+                            rows.append((f"json_turn_{len(rows)+1}", source_session_id or "json_source", len(rows)+1, u_msg, a_res, lat, tok, [], payload))
             except Exception:
                 pass
 
@@ -191,11 +207,20 @@ def rerun_session_with_gpt5(source_session_id=None, recording_title=None, record
         # Try specified target model; if model doesn't exist on API, fallback cleanly
         for attempt_model in [target_model, "gpt-4o-mini", "gpt-4o"]:
             try:
-                response = client.chat.completions.create(
-                    model=attempt_model,
-                    messages=messages,
-                    temperature=0.2
+                kwargs = {
+                    "model": attempt_model,
+                    "messages": messages,
+                }
+                is_reasoning = (
+                    attempt_model.startswith("o1") or
+                    attempt_model.startswith("o3") or
+                    "sol" in attempt_model.lower() or
+                    "astra" in attempt_model.lower() or
+                    attempt_model.startswith("gpt-6")
                 )
+                if not is_reasoning:
+                    kwargs["temperature"] = 0.2
+                response = client.chat.completions.create(**kwargs)
                 reply_text = response.choices[0].message.content or "No response generated."
                 if response.usage:
                     prompt_tok = response.usage.prompt_tokens
