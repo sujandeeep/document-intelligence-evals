@@ -1,0 +1,17 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+psycopg[binary]>=3.1.0
+pgvector>=0.2.0
+openai>=1.0.0
+fastmcp>=0.1.0
+mcp>=1.0.0
+prometheus_client>=0.20.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.9
+pypdf>=4.0.0
+pydantic>=2.0.0
+starlette>=0.36.0
+ragflow-sdk>=0.20.0
+requests>=2.31.0
+python-docx>=1.1.0
+reportlab>=4.0.0

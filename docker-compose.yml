@@ -1,0 +1,95 @@
+name: hello-mcp
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: mathrouter-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mathrouter
+    ports:
+      - "5434:5432"
+    volumes:
+      - mathrouter-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mathrouter"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: mathrouter-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./hello-mcp/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: mathrouter-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./hello-mcp/grafana/provisioning:/etc/grafana/provisioning:ro
+      - mathrouter-grafana-data:/var/lib/grafana
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: mathrouter-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/mathrouter
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./hello-mcp:/app/hello-mcp
+      - ./rag_docs:/app/rag_docs
+      - ./rigid_docs:/app/rigid_docs
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: mathrouter-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - VITE_BACKEND_URL=http://backend:8000
+      - VITE_PROMETHEUS_URL=http://prometheus:9090
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.js:/app/vite.config.js
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  mathrouter-pgdata:
+  mathrouter-grafana-data:

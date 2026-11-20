@@ -1,0 +1,38 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system build dependencies and libpq for PostgreSQL/psycopg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install python dependencies with clean dependency resolution
+RUN pip install --no-cache-dir \
+    fastapi \
+    "uvicorn[standard]" \
+    "psycopg[binary]" \
+    pgvector \
+    openai \
+    prometheus_client \
+    python-dotenv \
+    python-multipart \
+    pypdf \
+    pydantic \
+    starlette \
+    requests \
+    python-docx \
+    reportlab \
+    fastmcp==4.1.8 && \
+    pip install --no-cache-dir --no-deps ragflow-sdk==0.22.1
+
+COPY . .
+
+ENV PYTHONUNBUFFERED=1
+ENV DATABASE_URL="postgresql://postgres:postgres@postgres:5432/mathrouter"
+
+EXPOSE 8000
+
+CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]
